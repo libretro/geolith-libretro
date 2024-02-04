@@ -1,0 +1,27 @@
+INCFLAGS := -I$(CORE_DIR)/deps -I$(CORE_DIR)/deps/miniz -I$(CORE_DIR)/src \
+	-I$(CORE_DIR)/libretro
+
+ifeq ($(platform),unix)
+LIBS += -lm
+endif
+
+SOURCES_C := \
+	$(CORE_DIR)/libretro/libretro.c \
+	$(CORE_DIR)/deps/miniz/miniz.c \
+	$(CORE_DIR)/deps/speex/resample.c \
+	$(CORE_DIR)/src/geo.c \
+	$(CORE_DIR)/src/geo_lspc.c \
+	$(CORE_DIR)/src/geo_m68k.c \
+	$(CORE_DIR)/src/geo_memcard.c \
+	$(CORE_DIR)/src/geo_mixer.c \
+	$(CORE_DIR)/src/geo_neo.c \
+	$(CORE_DIR)/src/geo_rtc.c \
+	$(CORE_DIR)/src/geo_serial.c \
+	$(CORE_DIR)/src/geo_ymfm.c \
+	$(CORE_DIR)/src/geo_z80.c \
+	$(CORE_DIR)/src/m68k/m68kcpu.c \
+	$(CORE_DIR)/src/m68k/m68kops.c \
+	$(CORE_DIR)/src/ymfm/ymfm_adpcm.c \
+	$(CORE_DIR)/src/ymfm/ymfm_opn.c \
+	$(CORE_DIR)/src/ymfm/ymfm_ssg.c \
+	$(CORE_DIR)/src/z80/z80.c
