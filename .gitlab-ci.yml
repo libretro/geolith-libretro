@@ -8,6 +8,7 @@
 .core-defs:
   variables:
     JNI_PATH: .
+    MAKEFILE_PATH: libretro
     CORENAME: geolith
 
 include:
