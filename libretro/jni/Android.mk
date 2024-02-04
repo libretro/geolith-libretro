@@ -1,7 +1,7 @@
 LOCAL_PATH := $(call my-dir)
 
 ROOT_DIR := $(LOCAL_PATH)/../..
-CORE_DIR := $(ROOT_DIR)/src
+CORE_DIR := $(ROOT_DIR)/libretro
 
 include $(ROOT_DIR)/libretro/Makefile.common
 
