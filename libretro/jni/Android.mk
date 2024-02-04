@@ -1,9 +1,9 @@
 LOCAL_PATH := $(call my-dir)
 
-ROOT_DIR := $(LOCAL_PATH)/..
+ROOT_DIR := $(LOCAL_PATH)/../..
 CORE_DIR := $(ROOT_DIR)/src
 
-include $(ROOT_DIR)/Makefile.common
+include $(ROOT_DIR)/libretro/Makefile.common
 
 COREFLAGS := -DANDROID -D__LIBRETRO__ $(INCFLAGS)
 
@@ -17,5 +17,4 @@ LOCAL_MODULE    := retro
 LOCAL_SRC_FILES := $(SOURCES_C)
 LOCAL_CFLAGS    := $(COREFLAGS)
 LOCAL_LDFLAGS   := -Wl,-version-script=$(ROOT_DIR)/link.T
-LOCAL_LDLIBS    := -lz
 include $(BUILD_SHARED_LIBRARY)
