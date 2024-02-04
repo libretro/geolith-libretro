@@ -20,18 +20,6 @@ include:
   # Windows 32-bit
   - project: 'libretro-infrastructure/ci-templates'
     file: '/windows-i686-mingw.yml'
-
-  # Windows msvc10 64-bit
-  - project: 'libretro-infrastructure/ci-templates'
-    file: '/windows-x64-msvc10-msys2.yml'
-
-  # Windows msvc10 32-bit
-  - project: 'libretro-infrastructure/ci-templates'
-    file: '/windows-i686-msvc10-msys2.yml'
-
-  # Windows msvc05 32-bit
-  - project: 'libretro-infrastructure/ci-templates'
-    file: '/windows-i686-msvc05-msys2.yml'
     
   # Linux 64-bit
   - project: 'libretro-infrastructure/ci-templates'
@@ -95,10 +83,6 @@ include:
   - project: 'libretro-infrastructure/ci-templates'
     file: '/vita-static.yml'
 
-  # OpenDingux
-  - project: 'libretro-infrastructure/ci-templates'
-    file: '/dingux-mips32.yml'
-
   # OpenDingux (ARM)
   - project: 'libretro-infrastructure/ci-templates'
     file: '/dingux-arm32.yml'
@@ -130,24 +114,6 @@ libretro-build-windows-x64:
 libretro-build-windows-i686:
   extends:
     - .libretro-windows-i686-mingw-make-default
-    - .core-defs
-
-# Windows msvc10 64-bit
-libretro-build-windows-msvc10-x64:
-  extends:
-    - .libretro-windows-x64-msvc10-msys2-make-default
-    - .core-defs
-
-# Windows msvc10 32-bit
-libretro-build-windows-msvc10-i686:
-  extends:
-    - .libretro-windows-i686-msvc10-msys2-make-default
-    - .core-defs
-
-# Windows msvc05 32-bit
-libretro-build-windows-msvc05-i686:
-  extends:
-    - .libretro-windows-i686-msvc05-msys2-make-default
     - .core-defs
     
 # Linux 64-bit
@@ -264,12 +230,6 @@ libretro-build-psp:
 libretro-build-vita:
   extends:
     - .libretro-vita-static-retroarch-master
-    - .core-defs
-
-# OpenDingux
-libretro-build-dingux-mips32:
-  extends:
-    - .libretro-dingux-mips32-make-default
     - .core-defs
 
 # OpenDingux Beta
