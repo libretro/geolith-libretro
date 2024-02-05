@@ -80,7 +80,8 @@ extern "C" {
 #endif
 
 #if !defined(uint)
-#define uint   unsigned int
+#include <stdint.h>
+#define uint   uint32_t
 #endif
 
 #if M68K_USE_64_BIT
