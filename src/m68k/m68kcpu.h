@@ -79,7 +79,7 @@ extern "C" {
 #if defined(__OpenBSD__) || defined(__DragonFly__)
 #include <stdio.h>
 #else
-#define uint   uint32
+#define uint   unsigned int
 #endif
 
 #if M68K_USE_64_BIT
