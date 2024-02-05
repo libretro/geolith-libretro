@@ -63,7 +63,6 @@ extern "C" {
 #undef uint32
 #undef uint64
 #undef sint
-#undef uint
 
 #define sint8  signed   char			/* ASG: changed from char to signed char */
 #define sint16 signed   short
@@ -78,7 +77,9 @@ extern "C" {
 /* OpenBSD and DragonFly BSD C libraries have a typedef for uint */
 #if defined(__OpenBSD__) || defined(__DragonFly__)
 #include <stdio.h>
-#else
+#endif
+
+#if !defined(uint)
 #define uint   unsigned int
 #endif
 
