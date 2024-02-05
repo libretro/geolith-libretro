@@ -3,7 +3,7 @@ LOCAL_PATH := $(call my-dir)
 ROOT_DIR := $(LOCAL_PATH)/../..
 CORE_DIR := $(ROOT_DIR)
 
-include $(ROOT_DIR)/Makefile.common
+include $(ROOT_DIR)/libretro/Makefile.common
 
 COREFLAGS := -DANDROID -D__LIBRETRO__ $(INCFLAGS)
 
