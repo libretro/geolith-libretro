@@ -3,7 +3,7 @@
 /* ======================================================================== */
 /*
  *                                  MUSASHI
- *                                Version 3.32
+ *                                Version 4.60
  *
  * A portable Motorola M680x0 processor emulation engine.
  * Copyright Karl Stenerud.  All rights reserved.
@@ -204,6 +204,7 @@ int geo_m68k_int_ack(int level);
 #else
 #define M68K_USE_64_BIT  OPT_OFF
 #endif
+
 
 #endif /* M68K_COMPILE_FOR_MAME */
 

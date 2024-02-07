@@ -1,3 +1,32 @@
+/* ======================================================================== */
+/* ========================= LICENSING & COPYRIGHT ======================== */
+/* ======================================================================== */
+/*
+ *                                  MUSASHI
+ *                                Version 4.60
+ *
+ * A portable Motorola M680x0 processor emulation engine.
+ * Copyright Karl Stenerud.  All rights reserved.
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
+
 #include <math.h>
 #include <stdio.h>
 #include <stdarg.h>
@@ -21,8 +50,8 @@ static void fatalerror(char *format, ...) {
 #define DOUBLE_EXPONENT					(unsigned long long)(0x7ff0000000000000)
 #define DOUBLE_MANTISSA					(unsigned long long)(0x000fffffffffffff)
 
-union fu32 { float f; uint32 u; };
-union du64 { double d; uint64 u; };
+union fu32 { float f; uint32_t u; };
+union du64 { double d; uint64_t u; };
 
 static inline void SET_CONDITION_CODES(fp_reg reg)
 {
@@ -80,7 +109,7 @@ static inline int TEST_CONDITION(int condition)
 	return r;
 }
 
-static uint8 READ_EA_8(int ea_)
+static uint8_t READ_EA_8(int ea_)
 {
 	int mode = (ea_ >> 3) & 0x7;
 	int reg = (ea_ & 0x7);
@@ -93,17 +122,17 @@ static uint8 READ_EA_8(int ea_)
 		}
 		case 2: 	// (An)
 		{
-			uint32 ea = REG_A[reg];
+			uint32_t ea = REG_A[reg];
 			return m68ki_read_8(ea);
 		}
 		case 5:		// (d16, An)
 		{
-			uint32 ea = EA_AY_DI_8();
+			uint32_t ea = EA_AY_DI_8();
 			return m68ki_read_8(ea);
 		}
 		case 6:		// (An) + (Xn) + d8
 		{
-			uint32 ea = EA_AY_IX_8();
+			uint32_t ea = EA_AY_IX_8();
 			return m68ki_read_8(ea);
 		}
 		case 7:
@@ -112,14 +141,14 @@ static uint8 READ_EA_8(int ea_)
 			{
 				case 0:		// (xxx).W
 				{
-					uint32 ea = (uint32)OPER_I_16();
+					uint32_t ea = (uint32_t)OPER_I_16();
 					return m68ki_read_8(ea);
 				}
 				case 1:		// (xxx).L
 				{
-					uint32 d1 = OPER_I_16();
-					uint32 d2 = OPER_I_16();
-					uint32 ea = (d1 << 16) | d2;
+					uint32_t d1 = OPER_I_16();
+					uint32_t d2 = OPER_I_16();
+					uint32_t ea = (d1 << 16) | d2;
 					return m68ki_read_8(ea);
 				}
 				case 4:		// #<data>
@@ -136,7 +165,7 @@ static uint8 READ_EA_8(int ea_)
 	return 0;
 }
 
-static uint16 READ_EA_16(int ea_)
+static uint16_t READ_EA_16(int ea_)
 {
 	int mode = (ea_ >> 3) & 0x7;
 	int reg = (ea_ & 0x7);
@@ -145,21 +174,21 @@ static uint16 READ_EA_16(int ea_)
 	{
 		case 0:		// Dn
 		{
-			return (uint16)(REG_D[reg]);
+			return (uint16_t)(REG_D[reg]);
 		}
 		case 2:		// (An)
 		{
-			uint32 ea = REG_A[reg];
+			uint32_t ea = REG_A[reg];
 			return m68ki_read_16(ea);
 		}
 		case 5:		// (d16, An)
 		{
-			uint32 ea = EA_AY_DI_16();
+			uint32_t ea = EA_AY_DI_16();
 			return m68ki_read_16(ea);
 		}
 		case 6:		// (An) + (Xn) + d8
 		{
-			uint32 ea = EA_AY_IX_16();
+			uint32_t ea = EA_AY_IX_16();
 			return m68ki_read_16(ea);
 		}
 		case 7:
@@ -168,14 +197,14 @@ static uint16 READ_EA_16(int ea_)
 			{
 				case 0:		// (xxx).W
 				{
-					uint32 ea = (uint32)OPER_I_16();
+					uint32_t ea = (uint32_t)OPER_I_16();
 					return m68ki_read_16(ea);
 				}
 				case 1:		// (xxx).L
 				{
-					uint32 d1 = OPER_I_16();
-					uint32 d2 = OPER_I_16();
-					uint32 ea = (d1 << 16) | d2;
+					uint32_t d1 = OPER_I_16();
+					uint32_t d2 = OPER_I_16();
+					uint32_t ea = (d1 << 16) | d2;
 					return m68ki_read_16(ea);
 				}
 				case 4:		// #<data>
@@ -193,7 +222,7 @@ static uint16 READ_EA_16(int ea_)
 	return 0;
 }
 
-static uint32 READ_EA_32(int ea_)
+static uint32_t READ_EA_32(int ea_)
 {
 	int mode = (ea_ >> 3) & 0x7;
 	int reg = (ea_ & 0x7);
@@ -206,22 +235,22 @@ static uint32 READ_EA_32(int ea_)
 		}
 		case 2:		// (An)
 		{
-			uint32 ea = REG_A[reg];
+			uint32_t ea = REG_A[reg];
 			return m68ki_read_32(ea);
 		}
 		case 3:		// (An)+
 		{
-			uint32 ea = EA_AY_PI_32();
+			uint32_t ea = EA_AY_PI_32();
 			return m68ki_read_32(ea);
 		}
 		case 5:		// (d16, An)
 		{
-			uint32 ea = EA_AY_DI_32();
+			uint32_t ea = EA_AY_DI_32();
 			return m68ki_read_32(ea);
 		}
 		case 6:		// (An) + (Xn) + d8
 		{
-			uint32 ea = EA_AY_IX_32();
+			uint32_t ea = EA_AY_IX_32();
 			return m68ki_read_32(ea);
 		}
 		case 7:
@@ -230,19 +259,19 @@ static uint32 READ_EA_32(int ea_)
 			{
 				case 0:		// (xxx).W
 				{
-					uint32 ea = (uint32)OPER_I_16();
+					uint32_t ea = (uint32_t)OPER_I_16();
 					return m68ki_read_32(ea);
 				}
 				case 1:		// (xxx).L
 				{
-					uint32 d1 = OPER_I_16();
-					uint32 d2 = OPER_I_16();
-					uint32 ea = (d1 << 16) | d2;
+					uint32_t d1 = OPER_I_16();
+					uint32_t d2 = OPER_I_16();
+					uint32_t ea = (d1 << 16) | d2;
 					return m68ki_read_32(ea);
 				}
 				case 2:		// (d16, PC)
 				{
-					uint32 ea = EA_PCDI_32();
+					uint32_t ea = EA_PCDI_32();
 					return m68ki_read_32(ea);
 				}
 				case 4:		// #<data>
@@ -258,35 +287,35 @@ static uint32 READ_EA_32(int ea_)
 	return 0;
 }
 
-static uint64 READ_EA_64(int ea_)
+static uint64_t READ_EA_64(int ea_)
 {
 	int mode = (ea_ >> 3) & 0x7;
 	int reg = (ea_ & 0x7);
-	uint32 h1, h2;
+	uint32_t h1, h2;
 
 	switch (mode)
 	{
 		case 2:		// (An)
 		{
-			uint32 ea = REG_A[reg];
+			uint32_t ea = REG_A[reg];
 			h1 = m68ki_read_32(ea+0);
 			h2 = m68ki_read_32(ea+4);
-			return  (uint64)(h1) << 32 | (uint64)(h2);
+			return  (uint64_t)(h1) << 32 | (uint64_t)(h2);
 		}
 		case 3:		// (An)+
 		{
-			uint32 ea = REG_A[reg];
+			uint32_t ea = REG_A[reg];
 			REG_A[reg] += 8;
 			h1 = m68ki_read_32(ea+0);
 			h2 = m68ki_read_32(ea+4);
-			return  (uint64)(h1) << 32 | (uint64)(h2);
+			return  (uint64_t)(h1) << 32 | (uint64_t)(h2);
 		}
 		case 5:		// (d16, An)
 		{
-			uint32 ea = EA_AY_DI_32();
+			uint32_t ea = EA_AY_DI_32();
 			h1 = m68ki_read_32(ea+0);
 			h2 = m68ki_read_32(ea+4);
-			return  (uint64)(h1) << 32 | (uint64)(h2);
+			return  (uint64_t)(h1) << 32 | (uint64_t)(h2);
 		}
 		case 7:
 		{
@@ -296,14 +325,14 @@ static uint64 READ_EA_64(int ea_)
 				{
 					h1 = OPER_I_32();
 					h2 = OPER_I_32();
-					return  (uint64)(h1) << 32 | (uint64)(h2);
+					return  (uint64_t)(h1) << 32 | (uint64_t)(h2);
 				}
 				case 2:		// (d16, PC)
 				{
-					uint32 ea = EA_PCDI_32();
+					uint32_t ea = EA_PCDI_32();
 					h1 = m68ki_read_32(ea+0);
 					h2 = m68ki_read_32(ea+4);
-					return  (uint64)(h1) << 32 | (uint64)(h2);
+					return  (uint64_t)(h1) << 32 | (uint64_t)(h2);
 				}
 				default:	fatalerror("MC68040: READ_EA_64: unhandled mode %d, reg %d at %08X\n", mode, reg, REG_PC);
 			}
@@ -315,7 +344,7 @@ static uint64 READ_EA_64(int ea_)
 	return 0;
 }
 
-static void WRITE_EA_8(int ea_, uint8 data)
+static void WRITE_EA_8(int ea_, uint8_t data)
 {
 	int mode = (ea_ >> 3) & 0x7;
 	int reg = (ea_ & 0x7);
@@ -329,31 +358,31 @@ static void WRITE_EA_8(int ea_, uint8 data)
 		}
 		case 2:		// (An)
 		{
-			uint32 ea = REG_A[reg];
+			uint32_t ea = REG_A[reg];
 			m68ki_write_8(ea, data);
 			break;
 		}
 		case 3:		// (An)+
 		{
-			uint32 ea = EA_AY_PI_8();
+			uint32_t ea = EA_AY_PI_8();
 			m68ki_write_8(ea, data);
 			break;
 		}
 		case 4:		// -(An)
 		{
-			uint32 ea = EA_AY_PD_8();
+			uint32_t ea = EA_AY_PD_8();
 			m68ki_write_8(ea, data);
 			break;
 		}
 		case 5:		// (d16, An)
 		{
-			uint32 ea = EA_AY_DI_8();
+			uint32_t ea = EA_AY_DI_8();
 			m68ki_write_8(ea, data);
 			break;
 		}
 		case 6:		// (An) + (Xn) + d8
 		{
-			uint32 ea = EA_AY_IX_8();
+			uint32_t ea = EA_AY_IX_8();
 			m68ki_write_8(ea, data);
 			break;
 		}
@@ -363,15 +392,15 @@ static void WRITE_EA_8(int ea_, uint8 data)
 			{
 				case 1:		// (xxx).B
 				{
-					uint32 d1 = OPER_I_16();
-					uint32 d2 = OPER_I_16();
-					uint32 ea = (d1 << 16) | d2;
+					uint32_t d1 = OPER_I_16();
+					uint32_t d2 = OPER_I_16();
+					uint32_t ea = (d1 << 16) | d2;
 					m68ki_write_8(ea, data);
 					break;
 				}
 				case 2:		// (d16, PC)
 				{
-					uint32 ea = EA_PCDI_16();
+					uint32_t ea = EA_PCDI_16();
 					m68ki_write_8(ea, data);
 					break;
 				}
@@ -383,7 +412,7 @@ static void WRITE_EA_8(int ea_, uint8 data)
 	}
 }
 
-static void WRITE_EA_16(int ea_, uint16 data)
+static void WRITE_EA_16(int ea_, uint16_t data)
 {
 	int mode = (ea_ >> 3) & 0x7;
 	int reg = (ea_ & 0x7);
@@ -397,31 +426,31 @@ static void WRITE_EA_16(int ea_, uint16 data)
 		}
 		case 2:		// (An)
 		{
-			uint32 ea = REG_A[reg];
+			uint32_t ea = REG_A[reg];
 			m68ki_write_16(ea, data);
 			break;
 		}
 		case 3:		// (An)+
 		{
-			uint32 ea = EA_AY_PI_16();
+			uint32_t ea = EA_AY_PI_16();
 			m68ki_write_16(ea, data);
 			break;
 		}
 		case 4:		// -(An)
 		{
-			uint32 ea = EA_AY_PD_16();
+			uint32_t ea = EA_AY_PD_16();
 			m68ki_write_16(ea, data);
 			break;
 		}
 		case 5:		// (d16, An)
 		{
-			uint32 ea = EA_AY_DI_16();
+			uint32_t ea = EA_AY_DI_16();
 			m68ki_write_16(ea, data);
 			break;
 		}
 		case 6:		// (An) + (Xn) + d8
 		{
-			uint32 ea = EA_AY_IX_16();
+			uint32_t ea = EA_AY_IX_16();
 			m68ki_write_16(ea, data);
 			break;
 		}
@@ -431,15 +460,15 @@ static void WRITE_EA_16(int ea_, uint16 data)
 			{
 				case 1:		// (xxx).W
 				{
-					uint32 d1 = OPER_I_16();
-					uint32 d2 = OPER_I_16();
-					uint32 ea = (d1 << 16) | d2;
+					uint32_t d1 = OPER_I_16();
+					uint32_t d2 = OPER_I_16();
+					uint32_t ea = (d1 << 16) | d2;
 					m68ki_write_16(ea, data);
 					break;
 				}
 				case 2:		// (d16, PC)
 				{
-					uint32 ea = EA_PCDI_16();
+					uint32_t ea = EA_PCDI_16();
 					m68ki_write_16(ea, data);
 					break;
 				}
@@ -451,7 +480,7 @@ static void WRITE_EA_16(int ea_, uint16 data)
 	}
 }
 
-static void WRITE_EA_32(int ea_, uint32 data)
+static void WRITE_EA_32(int ea_, uint32_t data)
 {
 	int mode = (ea_ >> 3) & 0x7;
 	int reg = (ea_ & 0x7);
@@ -470,31 +499,31 @@ static void WRITE_EA_32(int ea_, uint32 data)
 		}
 		case 2:		// (An)
 		{
-			uint32 ea = REG_A[reg];
+			uint32_t ea = REG_A[reg];
 			m68ki_write_32(ea, data);
 			break;
 		}
 		case 3:		// (An)+
 		{
-			uint32 ea = EA_AY_PI_32();
+			uint32_t ea = EA_AY_PI_32();
 			m68ki_write_32(ea, data);
 			break;
 		}
 		case 4:		// -(An)
 		{
-			uint32 ea = EA_AY_PD_32();
+			uint32_t ea = EA_AY_PD_32();
 			m68ki_write_32(ea, data);
 			break;
 		}
 		case 5:		// (d16, An)
 		{
-			uint32 ea = EA_AY_DI_32();
+			uint32_t ea = EA_AY_DI_32();
 			m68ki_write_32(ea, data);
 			break;
 		}
 		case 6:		// (An) + (Xn) + d8
 		{
-			uint32 ea = EA_AY_IX_32();
+			uint32_t ea = EA_AY_IX_32();
 			m68ki_write_32(ea, data);
 			break;
 		}
@@ -504,15 +533,15 @@ static void WRITE_EA_32(int ea_, uint32 data)
 			{
 				case 1:		// (xxx).L
 				{
-					uint32 d1 = OPER_I_16();
-					uint32 d2 = OPER_I_16();
-					uint32 ea = (d1 << 16) | d2;
+					uint32_t d1 = OPER_I_16();
+					uint32_t d2 = OPER_I_16();
+					uint32_t ea = (d1 << 16) | d2;
 					m68ki_write_32(ea, data);
 					break;
 				}
 				case 2:		// (d16, PC)
 				{
-					uint32 ea = EA_PCDI_32();
+					uint32_t ea = EA_PCDI_32();
 					m68ki_write_32(ea, data);
 					break;
 				}
@@ -524,7 +553,7 @@ static void WRITE_EA_32(int ea_, uint32 data)
 	}
 }
 
-static void WRITE_EA_64(int ea_, uint64 data)
+static void WRITE_EA_64(int ea_, uint64_t data)
 {
 	int mode = (ea_ >> 3) & 0x7;
 	int reg = (ea_ & 0x7);
@@ -533,28 +562,28 @@ static void WRITE_EA_64(int ea_, uint64 data)
 	{
 		case 2:		// (An)
 		{
-			uint32 ea = REG_A[reg];
-			m68ki_write_32(ea, (uint32)(data >> 32));
-			m68ki_write_32(ea+4, (uint32)(data));
+			uint32_t ea = REG_A[reg];
+			m68ki_write_32(ea, (uint32_t)(data >> 32));
+			m68ki_write_32(ea+4, (uint32_t)(data));
 			break;
 		}
 		case 4:		// -(An)
 		{
-			uint32 ea;
+			uint32_t ea;
 			REG_A[reg] -= 8;
 			ea = REG_A[reg];
-			m68ki_write_32(ea+0, (uint32)(data >> 32));
-			m68ki_write_32(ea+4, (uint32)(data));
+			m68ki_write_32(ea+0, (uint32_t)(data >> 32));
+			m68ki_write_32(ea+4, (uint32_t)(data));
 			break;
 		}
 		case 5:		// (d16, An)
 		{
-			uint32 ea = EA_AY_DI_32();
-			m68ki_write_32(ea+0, (uint32)(data >> 32));
-			m68ki_write_32(ea+4, (uint32)(data));
+			uint32_t ea = EA_AY_DI_32();
+			m68ki_write_32(ea+0, (uint32_t)(data >> 32));
+			m68ki_write_32(ea+4, (uint32_t)(data));
 			break;
 		}
-		default:	fatalerror("MC68040: WRITE_EA_64: unhandled mode %d, reg %d, data %08X%08X at %08X\n", mode, reg, (uint32)(data >> 32), (uint32)(data), REG_PC);
+		default:	fatalerror("MC68040: WRITE_EA_64: unhandled mode %d, reg %d, data %08X%08X at %08X\n", mode, reg, (uint32_t)(data >> 32), (uint32_t)(data), REG_PC);
 	}
 }
 
@@ -570,13 +599,13 @@ static fp_reg READ_EA_FPE(int ea_)
 	{
 		case 3:		// (An)+
 		{
-			uint32 d1,d2;
-			uint32 ea = REG_A[reg];
+			uint32_t d1,d2;
+			uint32_t ea = REG_A[reg];
 			REG_A[reg] += 12;
 			d1 = m68ki_read_32(ea+0);
 			d2 = m68ki_read_32(ea+4);
 			// d3 = m68ki_read_32(ea+8);
-			r.i = (uint64)(d1) << 32 | (uint64)(d2);
+			r.i = (uint64_t)(d1) << 32 | (uint64_t)(d2);
 			break;
 		}
 		default:	fatalerror("MC68040: READ_EA_FPE: unhandled mode %d, reg %d, at %08X\n", mode, reg, REG_PC);
@@ -596,11 +625,11 @@ static void WRITE_EA_FPE(int ea_, fp_reg fpr)
 	{
 		case 4:		// -(An)
 		{
-			uint32 ea;
+			uint32_t ea;
 			REG_A[reg] -= 12;
 			ea = REG_A[reg];
-			m68ki_write_32(ea+0, (uint32)(fpr.i >> 32));
-			m68ki_write_32(ea+4, (uint32)(fpr.i));
+			m68ki_write_32(ea+0, (uint32_t)(fpr.i >> 32));
+			m68ki_write_32(ea+4, (uint32_t)(fpr.i));
 			m68ki_write_32(ea+8, 0);
 			break;
 		}
@@ -609,7 +638,7 @@ static void WRITE_EA_FPE(int ea_, fp_reg fpr)
 }
 
 
-static void fpgen_rm_reg(uint16 w2)
+static void fpgen_rm_reg(uint16_t w2)
 {
 	int ea = REG_IR & 0x3f;
 	int rm = (w2 >> 14) & 0x1;
@@ -624,7 +653,7 @@ static void fpgen_rm_reg(uint16 w2)
 		{
 			case 0:		// Long-Word Integer
 			{
-				sint32 d = READ_EA_32(ea);
+				int32_t d = READ_EA_32(ea);
 				source = (double)(d);
 				break;
 			}
@@ -647,7 +676,7 @@ static void fpgen_rm_reg(uint16 w2)
 			}
 			case 4:		// Word Integer
 			{
-				sint16 d = READ_EA_16(ea);
+				int16_t d = READ_EA_16(ea);
 				source = (double)(d);
 				break;
 			}
@@ -660,7 +689,7 @@ static void fpgen_rm_reg(uint16 w2)
 			}
 			case 6:		// Byte Integer
 			{
-				sint8 d = READ_EA_8(ea);
+				int8_t d = READ_EA_8(ea);
 				source = (double)(d);
 				break;
 			}
@@ -749,7 +778,7 @@ static void fpgen_rm_reg(uint16 w2)
 	}
 }
 
-static void fmove_reg_mem(uint16 w2)
+static void fmove_reg_mem(uint16_t w2)
 {
 	int ea = REG_IR & 0x3f;
 	int src = (w2 >>  7) & 0x7;
@@ -760,7 +789,7 @@ static void fmove_reg_mem(uint16 w2)
 	{
 		case 0:		// Long-Word Integer
 		{
-			sint32 d = (sint32)(REG_FP[src].f);
+			int32_t d = (int32_t)(REG_FP[src].f);
 			WRITE_EA_32(ea, d);
 			break;
 		}
@@ -783,19 +812,19 @@ static void fmove_reg_mem(uint16 w2)
 		}
 		case 4:		// Word Integer
 		{
-			sint16 d = (sint16)(REG_FP[src].f);
+			int16_t d = (int16_t)(REG_FP[src].f);
 			WRITE_EA_16(ea, d);
 			break;
 		}
 		case 5:		// Double-precision Real
 		{
-			uint64 d = REG_FP[src].i;
+			uint64_t d = REG_FP[src].i;
 			WRITE_EA_64(ea, d);
 			break;
 		}
 		case 6:		// Byte Integer
 		{
-			sint8 d = (sint16)(REG_FP[src].f);
+			int8_t d = (int16_t)(REG_FP[src].f);
 			WRITE_EA_8(ea, d);
 			break;
 		}
@@ -809,7 +838,7 @@ static void fmove_reg_mem(uint16 w2)
 	USE_CYCLES(12);
 }
 
-static void fmove_fpcr(uint16 w2)
+static void fmove_fpcr(uint16_t w2)
 {
 	int ea = REG_IR & 0x3f;
 	int dir = (w2 >> 13) & 0x1;
@@ -839,7 +868,7 @@ static void fmove_fpcr(uint16 w2)
 	USE_CYCLES(10);
 }
 
-static void fmovem(uint16 w2)
+static void fmovem(uint16_t w2)
 {
 	int i;
 	int ea = REG_IR & 0x3f;
@@ -891,10 +920,10 @@ static void fmovem(uint16 w2)
 
 static void fbcc16(void)
 {
-	sint32 offset;
+	int32_t offset;
 	int condition = REG_IR & 0x3f;
 
-	offset = (sint16)(OPER_I_16());
+	offset = (int16_t)(OPER_I_16());
 
 	// TODO: condition and jump!!!
 	if (TEST_CONDITION(condition))
@@ -908,7 +937,7 @@ static void fbcc16(void)
 
 static void fbcc32(void)
 {
-	sint32 offset;
+	int32_t offset;
 	int condition = REG_IR & 0x3f;
 
 	offset = OPER_I_32();
@@ -930,7 +959,7 @@ void m68040_fpu_op0(void)
 	{
 		case 0:
 		{
-			uint16 w2 = OPER_I_16();
+			uint16_t w2 = OPER_I_16();
 			switch ((w2 >> 13) & 0x7)
 			{
 				case 0x0:	// FPU ALU FP, FP

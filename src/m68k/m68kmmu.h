@@ -1,20 +1,50 @@
+/* ======================================================================== */
+/* ========================= LICENSING & COPYRIGHT ======================== */
+/* ======================================================================== */
+/*
+ *                                  MUSASHI
+ *                                Version 4.60
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions are met:
+ *
+ * 1. Redistributions of source code must retain the above copyright notice,
+ *    this list of conditions and the following disclaimer.
+ *
+ * 2. Redistributions in binary form must reproduce the above copyright notice,
+ *    this list of conditions and the following disclaimer in the documentation
+ *    and/or other materials provided with the distribution.
+ *
+ * 3. Neither the name of the copyright holder nor the names of its
+ *    contributors may be used to endorse or promote products derived from
+ *    this software without specific prior written permission.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+ * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
+ * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+ * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+ * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+ * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+ * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ * POSSIBILITY OF SUCH DAMAGE.
+ */
+
 /*
     m68kmmu.h - PMMU implementation for 68851/68030/68040
-
     By R. Belmont
-
-    Copyright Nicola Salmoria and the MAME Team.
-    Visit http://mamedev.org for licensing and usage restrictions.
 */
 
 /*
 	pmmu_translate_addr: perform 68851/68030-style PMMU address translation
 */
-uint pmmu_translate_addr(uint addr_in)
+unsigned pmmu_translate_addr(unsigned addr_in)
 {
-	uint32 addr_out, tbl_entry = 0, tbl_entry2, tamode = 0, tbmode = 0, tcmode = 0;
-	uint root_aptr, root_limit, tofs, is, abits, bbits, cbits;
-	uint resolved, tptr, shift;
+	uint32_t addr_out, tbl_entry = 0, tbl_entry2, tamode = 0, tbmode = 0, tcmode = 0;
+	unsigned root_aptr, root_limit, tofs, is, abits, bbits, cbits;
+	unsigned resolved, tptr, shift;
 
 	resolved = 0;
 	addr_out = addr_in;
@@ -179,9 +209,9 @@ uint pmmu_translate_addr(uint addr_in)
 
 void m68881_mmu_ops(void)
 {
-	uint16 modes;
-	uint32 ea = m68ki_cpu.ir & 0x3f;
-	uint64 temp64;
+	uint16_t modes;
+	uint32_t ea = m68ki_cpu.ir & 0x3f;
+	uint64_t temp64;
 
 	// catch the 2 "weird" encodings up front (PBcc)
 	if ((m68ki_cpu.ir & 0xffc0) == 0xf0c0)
@@ -246,11 +276,11 @@ void m68881_mmu_ops(void)
 										break;
 
 									case 2: // supervisor root pointer
-										WRITE_EA_64(ea, (uint64)m68ki_cpu.mmu_srp_limit<<32 | (uint64)m68ki_cpu.mmu_srp_aptr);
+										WRITE_EA_64(ea, (uint64_t)m68ki_cpu.mmu_srp_limit<<32 | (uint64_t)m68ki_cpu.mmu_srp_aptr);
 										break;
 
 									case 3: // CPU root pointer
-										WRITE_EA_64(ea, (uint64)m68ki_cpu.mmu_crp_limit<<32 | (uint64)m68ki_cpu.mmu_crp_aptr);
+										WRITE_EA_64(ea, (uint64_t)m68ki_cpu.mmu_crp_limit<<32 | (uint64_t)m68ki_cpu.mmu_crp_aptr);
 										break;
 
 									default:

@@ -3,7 +3,7 @@
 /* ======================================================================== */
 /*
  *                                  MUSASHI
- *                                Version 3.32
+ *                                Version 4.60
  *
  * A portable Motorola M680x0 processor emulation engine.
  * Copyright Karl Stenerud.  All rights reserved.
@@ -35,16 +35,9 @@
 
 #include <stdlib.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <string.h>
 #include "m68k.h"
-
-#ifndef uint32
-#define uint32 uint
-#endif
-
-#ifndef uint16
-#define uint16 unsigned short
-#endif
 
 #ifndef DECL_SPEC
 #define DECL_SPEC
@@ -53,10 +46,6 @@
 /* ======================================================================== */
 /* ============================ GENERAL DEFINES =========================== */
 /* ======================================================================== */
-
-/* unsigned int and int must be at least 32 bits wide */
-#undef uint
-#define uint unsigned int
 
 /* Bit Isolation Functions */
 #define BIT_0(A)  ((A) & 0x00000001)
@@ -152,14 +141,14 @@
 /* ======================================================================== */
 
 /* Read data at the PC and increment PC */
-uint  read_imm_8(void);
-uint  read_imm_16(void);
-uint  read_imm_32(void);
+unsigned  read_imm_8(void);
+unsigned  read_imm_16(void);
+unsigned  read_imm_32(void);
 
 /* Read data at the PC but don't imcrement the PC */
-uint  peek_imm_8(void);
-uint  peek_imm_16(void);
-uint  peek_imm_32(void);
+unsigned  peek_imm_8(void);
+unsigned  peek_imm_16(void);
+unsigned  peek_imm_32(void);
 
 /* make signed integers 100% portably */
 static int make_int_8(int value);
@@ -167,20 +156,20 @@ static int make_int_16(int value);
 static int make_int_32(int value);
 
 /* make a string of a hex value */
-static char* make_signed_hex_str_8(uint val);
-static char* make_signed_hex_str_16(uint val);
-static char* make_signed_hex_str_32(uint val);
+static char* make_signed_hex_str_8(unsigned val);
+static char* make_signed_hex_str_16(unsigned val);
+static char* make_signed_hex_str_32(unsigned val);
 
 /* make string of ea mode */
-static char* get_ea_mode_str(uint instruction, uint size);
+static char* get_ea_mode_str(unsigned instruction, unsigned size);
 
-char* get_ea_mode_str_8(uint instruction);
-char* get_ea_mode_str_16(uint instruction);
-char* get_ea_mode_str_32(uint instruction);
+char* get_ea_mode_str_8(unsigned instruction);
+char* get_ea_mode_str_16(unsigned instruction);
+char* get_ea_mode_str_32(unsigned instruction);
 
 /* make string of immediate value */
-static char* get_imm_str_s(uint size);
-static char* get_imm_str_u(uint size);
+static char* get_imm_str_s(unsigned size);
+static char* get_imm_str_u(unsigned size);
 
 char* get_imm_str_s8(void);
 char* get_imm_str_s16(void);
@@ -188,16 +177,16 @@ char* get_imm_str_s32(void);
 
 /* Stuff to build the opcode handler jump table */
 static void  build_opcode_table(void);
-static int   valid_ea(uint opcode, uint mask);
+static int   valid_ea(unsigned opcode, unsigned mask);
 static int DECL_SPEC compare_nof_true_bits(const void *aptr, const void *bptr);
 
 /* used to build opcode handler jump table */
 typedef struct
 {
 	void (*opcode_handler)(void); /* handler function */
-	uint mask;                    /* mask on opcode */
-	uint match;                   /* what to match after masking */
-	uint ea_mask;                 /* what ea modes are allowed */
+	unsigned mask;                    /* mask on opcode */
+	unsigned match;                   /* what to match after masking */
+	unsigned ea_mask;                 /* what ea modes are allowed */
 } opcode_struct;
 
 
@@ -212,21 +201,21 @@ static void (*g_instruction_table[0x10000])(void);
 static int  g_initialized = 0;
 
 /* Address mask to simulate address lines */
-static unsigned int g_address_mask = 0xffffffff;
+static unsigned g_address_mask = 0xffffffff;
 
 static char g_dasm_str[100]; /* string to hold disassembly */
 static char g_helper_str[100]; /* string to hold helpful info */
-static uint g_cpu_pc;        /* program counter */
-static uint g_cpu_ir;        /* instruction register */
-static uint g_cpu_type;
-static uint g_opcode_type;
+static unsigned g_cpu_pc;        /* program counter */
+static unsigned g_cpu_ir;        /* instruction register */
+static unsigned g_cpu_type;
+static unsigned g_opcode_type;
 static const unsigned char* g_rawop;
-static uint g_rawbasepc;
+static unsigned g_rawbasepc;
 
 /* used by ops like asr, ror, addq, etc */
-static const uint g_3bit_qdata_table[8] = {8, 1, 2, 3, 4, 5, 6, 7};
+static const unsigned g_3bit_qdata_table[8] = {8, 1, 2, 3, 4, 5, 6, 7};
 
-static const uint g_5bit_data_table[32] =
+static const unsigned g_5bit_data_table[32] =
 {
 	32,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,
 	16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31
@@ -271,9 +260,9 @@ static const char *const g_mmucond[16] =
 		return;								\
 	}
 
-static uint dasm_read_imm_8(uint advance)
+static unsigned dasm_read_imm_8(unsigned advance)
 {
-	uint result;
+	unsigned result;
 	if (g_rawop)
 		result = g_rawop[g_cpu_pc + 1 - g_rawbasepc];
 	else
@@ -282,9 +271,9 @@ static uint dasm_read_imm_8(uint advance)
 	return result;
 }
 
-static uint dasm_read_imm_16(uint advance)
+static unsigned dasm_read_imm_16(unsigned advance)
 {
-	uint result;
+	unsigned result;
 	if (g_rawop)
 		result = (g_rawop[g_cpu_pc + 0 - g_rawbasepc] << 8) |
 		          g_rawop[g_cpu_pc + 1 - g_rawbasepc];
@@ -294,9 +283,9 @@ static uint dasm_read_imm_16(uint advance)
 	return result;
 }
 
-static uint dasm_read_imm_32(uint advance)
+static unsigned dasm_read_imm_32(unsigned advance)
 {
-	uint result;
+	unsigned result;
 	if (g_rawop)
 		result = (g_rawop[g_cpu_pc + 0 - g_rawbasepc] << 24) |
 		         (g_rawop[g_cpu_pc + 1 - g_rawbasepc] << 16) |
@@ -347,7 +336,7 @@ static int make_int_32(int value)
 }
 
 /* Get string representation of hex values */
-static char* make_signed_hex_str_8(uint val)
+static char* make_signed_hex_str_8(unsigned val)
 {
 	static char str[20];
 
@@ -363,7 +352,7 @@ static char* make_signed_hex_str_8(uint val)
 	return str;
 }
 
-static char* make_signed_hex_str_16(uint val)
+static char* make_signed_hex_str_16(unsigned val)
 {
 	static char str[20];
 
@@ -379,7 +368,7 @@ static char* make_signed_hex_str_16(uint val)
 	return str;
 }
 
-static char* make_signed_hex_str_32(uint val)
+static char* make_signed_hex_str_32(unsigned val)
 {
 	static char str[20];
 
@@ -397,7 +386,7 @@ static char* make_signed_hex_str_32(uint val)
 
 
 /* make string of immediate value */
-static char* get_imm_str_s(uint size)
+static char* get_imm_str_s(unsigned size)
 {
 	static char str[15];
 	if(size == 0)
@@ -409,7 +398,7 @@ static char* get_imm_str_s(uint size)
 	return str;
 }
 
-static char* get_imm_str_u(uint size)
+static char* get_imm_str_u(unsigned size)
 {
 	static char str[15];
 	if(size == 0)
@@ -422,20 +411,20 @@ static char* get_imm_str_u(uint size)
 }
 
 /* Make string of effective address mode */
-static char* get_ea_mode_str(uint instruction, uint size)
+static char* get_ea_mode_str(unsigned instruction, unsigned size)
 {
 	static char b1[64];
 	static char b2[64];
 	static char* mode = b2;
-	uint extension;
-	uint base;
-	uint outer;
+	unsigned extension;
+	unsigned base;
+	unsigned outer;
 	char base_reg[4];
 	char index_reg[8];
-	uint preindex;
-	uint postindex;
-	uint comma = 0;
-	uint temp_value;
+	unsigned preindex;
+	unsigned postindex;
+	unsigned comma = 0;
+	unsigned temp_value;
 
 	/* Switch buffers so we don't clobber on a double-call to this function */
 	mode = mode == b1 ? b2 : b1;
@@ -948,19 +937,19 @@ static void d68000_asl_ea(void)
 
 static void d68000_bcc_8(void)
 {
-	uint temp_pc = g_cpu_pc;
+	unsigned temp_pc = g_cpu_pc;
 	sprintf(g_dasm_str, "b%-2s     $%x", g_cc[(g_cpu_ir>>8)&0xf], temp_pc + make_int_8(g_cpu_ir));
 }
 
 static void d68000_bcc_16(void)
 {
-	uint temp_pc = g_cpu_pc;
+	unsigned temp_pc = g_cpu_pc;
 	sprintf(g_dasm_str, "b%-2s     $%x", g_cc[(g_cpu_ir>>8)&0xf], temp_pc + make_int_16(read_imm_16()));
 }
 
 static void d68020_bcc_32(void)
 {
-	uint temp_pc = g_cpu_pc;
+	unsigned temp_pc = g_cpu_pc;
 	LIMIT_CPU_TYPES(M68020_PLUS);
 	sprintf(g_dasm_str, "b%-2s     $%x; (2+)", g_cc[(g_cpu_ir>>8)&0xf], temp_pc + read_imm_32());
 }
@@ -995,7 +984,7 @@ static void d68010_bkpt(void)
 
 static void d68020_bfchg(void)
 {
-	uint extension;
+	unsigned extension;
 	char offset[3];
 	char width[3];
 
@@ -1016,7 +1005,7 @@ static void d68020_bfchg(void)
 
 static void d68020_bfclr(void)
 {
-	uint extension;
+	unsigned extension;
 	char offset[3];
 	char width[3];
 
@@ -1037,7 +1026,7 @@ static void d68020_bfclr(void)
 
 static void d68020_bfexts(void)
 {
-	uint extension;
+	unsigned extension;
 	char offset[3];
 	char width[3];
 
@@ -1058,7 +1047,7 @@ static void d68020_bfexts(void)
 
 static void d68020_bfextu(void)
 {
-	uint extension;
+	unsigned extension;
 	char offset[3];
 	char width[3];
 
@@ -1079,7 +1068,7 @@ static void d68020_bfextu(void)
 
 static void d68020_bfffo(void)
 {
-	uint extension;
+	unsigned extension;
 	char offset[3];
 	char width[3];
 
@@ -1100,7 +1089,7 @@ static void d68020_bfffo(void)
 
 static void d68020_bfins(void)
 {
-	uint extension;
+	unsigned extension;
 	char offset[3];
 	char width[3];
 
@@ -1121,7 +1110,7 @@ static void d68020_bfins(void)
 
 static void d68020_bfset(void)
 {
-	uint extension;
+	unsigned extension;
 	char offset[3];
 	char width[3];
 
@@ -1142,7 +1131,7 @@ static void d68020_bfset(void)
 
 static void d68020_bftst(void)
 {
-	uint extension;
+	unsigned extension;
 	char offset[3];
 	char width[3];
 
@@ -1163,19 +1152,19 @@ static void d68020_bftst(void)
 
 static void d68000_bra_8(void)
 {
-	uint temp_pc = g_cpu_pc;
+	unsigned temp_pc = g_cpu_pc;
 	sprintf(g_dasm_str, "bra     $%x", temp_pc + make_int_8(g_cpu_ir));
 }
 
 static void d68000_bra_16(void)
 {
-	uint temp_pc = g_cpu_pc;
+	unsigned temp_pc = g_cpu_pc;
 	sprintf(g_dasm_str, "bra     $%x", temp_pc + make_int_16(read_imm_16()));
 }
 
 static void d68020_bra_32(void)
 {
-	uint temp_pc = g_cpu_pc;
+	unsigned temp_pc = g_cpu_pc;
 	LIMIT_CPU_TYPES(M68020_PLUS);
 	sprintf(g_dasm_str, "bra     $%x; (2+)", temp_pc + read_imm_32());
 }
@@ -1193,21 +1182,21 @@ static void d68000_bset_s(void)
 
 static void d68000_bsr_8(void)
 {
-	uint temp_pc = g_cpu_pc;
+	unsigned temp_pc = g_cpu_pc;
 	sprintf(g_dasm_str, "bsr     $%x", temp_pc + make_int_8(g_cpu_ir));
 	SET_OPCODE_FLAGS(DASMFLAG_STEP_OVER);
 }
 
 static void d68000_bsr_16(void)
 {
-	uint temp_pc = g_cpu_pc;
+	unsigned temp_pc = g_cpu_pc;
 	sprintf(g_dasm_str, "bsr     $%x", temp_pc + make_int_16(read_imm_16()));
 	SET_OPCODE_FLAGS(DASMFLAG_STEP_OVER);
 }
 
 static void d68020_bsr_32(void)
 {
-	uint temp_pc = g_cpu_pc;
+	unsigned temp_pc = g_cpu_pc;
 	LIMIT_CPU_TYPES(M68020_PLUS);
 	sprintf(g_dasm_str, "bsr     $%x; (2+)", temp_pc + read_imm_32());
 	SET_OPCODE_FLAGS(DASMFLAG_STEP_OVER);
@@ -1235,7 +1224,7 @@ static void d68020_callm(void)
 
 static void d68020_cas_8(void)
 {
-	uint extension;
+	unsigned extension;
 	LIMIT_CPU_TYPES(M68020_PLUS);
 	extension = read_imm_16();
 	sprintf(g_dasm_str, "cas.b   D%d, D%d, %s; (2+)", extension&7, (extension>>6)&7, get_ea_mode_str_8(g_cpu_ir));
@@ -1243,7 +1232,7 @@ static void d68020_cas_8(void)
 
 static void d68020_cas_16(void)
 {
-	uint extension;
+	unsigned extension;
 	LIMIT_CPU_TYPES(M68020_PLUS);
 	extension = read_imm_16();
 	sprintf(g_dasm_str, "cas.w   D%d, D%d, %s; (2+)", extension&7, (extension>>6)&7, get_ea_mode_str_16(g_cpu_ir));
@@ -1251,7 +1240,7 @@ static void d68020_cas_16(void)
 
 static void d68020_cas_32(void)
 {
-	uint extension;
+	unsigned extension;
 	LIMIT_CPU_TYPES(M68020_PLUS);
 	extension = read_imm_16();
 	sprintf(g_dasm_str, "cas.l   D%d, D%d, %s; (2+)", extension&7, (extension>>6)&7, get_ea_mode_str_32(g_cpu_ir));
@@ -1265,7 +1254,7 @@ f e d c b a 9 8 7 6 5 4 3 2 1 0
  DARn2  0 0 0  Du2  0 0 0  Dc2
 */
 
-	uint extension;
+	unsigned extension;
 	LIMIT_CPU_TYPES(M68020_PLUS);
 	extension = read_imm_32();
 	sprintf(g_dasm_str, "cas2.w  D%d:D%d, D%d:D%d, (%c%d):(%c%d); (2+)",
@@ -1276,7 +1265,7 @@ f e d c b a 9 8 7 6 5 4 3 2 1 0
 
 static void d68020_cas2_32(void)
 {
-	uint extension;
+	unsigned extension;
 	LIMIT_CPU_TYPES(M68020_PLUS);
 	extension = read_imm_32();
 	sprintf(g_dasm_str, "cas2.l  D%d:D%d, D%d:D%d, (%c%d):(%c%d); (2+)",
@@ -1300,7 +1289,7 @@ static void d68020_chk_32(void)
 
 static void d68020_chk2_cmp2_8(void)
 {
-	uint extension;
+	unsigned extension;
 	LIMIT_CPU_TYPES(M68020_PLUS);
 	extension = read_imm_16();
 	sprintf(g_dasm_str, "%s.b  %s, %c%d; (2+)", BIT_B(extension) ? "chk2" : "cmp2", get_ea_mode_str_8(g_cpu_ir), BIT_F(extension) ? 'A' : 'D', (extension>>12)&7);
@@ -1308,7 +1297,7 @@ static void d68020_chk2_cmp2_8(void)
 
 static void d68020_chk2_cmp2_16(void)
 {
-	uint extension;
+	unsigned extension;
 	LIMIT_CPU_TYPES(M68020_PLUS);
 	extension = read_imm_16();
 	sprintf(g_dasm_str, "%s.w  %s, %c%d; (2+)", BIT_B(extension) ? "chk2" : "cmp2", get_ea_mode_str_16(g_cpu_ir), BIT_F(extension) ? 'A' : 'D', (extension>>12)&7);
@@ -1316,7 +1305,7 @@ static void d68020_chk2_cmp2_16(void)
 
 static void d68020_chk2_cmp2_32(void)
 {
-	uint extension;
+	unsigned extension;
 	LIMIT_CPU_TYPES(M68020_PLUS);
 	extension = read_imm_16();
 	sprintf(g_dasm_str, "%s.l  %s, %c%d; (2+)", BIT_B(extension) ? "chk2" : "cmp2", get_ea_mode_str_32(g_cpu_ir), BIT_F(extension) ? 'A' : 'D', (extension>>12)&7);
@@ -1467,8 +1456,8 @@ static void d68000_cmpm_32(void)
 
 static void d68020_cpbcc_16(void)
 {
-	uint extension;
-	uint new_pc = g_cpu_pc;
+	unsigned extension;
+	unsigned new_pc = g_cpu_pc;
 	LIMIT_CPU_TYPES(M68020_PLUS);
 	extension = read_imm_16();
 	new_pc += make_int_16(read_imm_16());
@@ -1477,8 +1466,8 @@ static void d68020_cpbcc_16(void)
 
 static void d68020_cpbcc_32(void)
 {
-	uint extension;
-	uint new_pc = g_cpu_pc;
+	unsigned extension;
+	unsigned new_pc = g_cpu_pc;
 	LIMIT_CPU_TYPES(M68020_PLUS);
 	extension = read_imm_16();
 	new_pc += read_imm_32();
@@ -1487,9 +1476,9 @@ static void d68020_cpbcc_32(void)
 
 static void d68020_cpdbcc(void)
 {
-	uint extension1;
-	uint extension2;
-	uint new_pc = g_cpu_pc;
+	unsigned extension1;
+	unsigned extension2;
+	unsigned new_pc = g_cpu_pc;
 	LIMIT_CPU_TYPES(M68020_PLUS);
 	extension1 = read_imm_16();
 	extension2 = read_imm_16();
@@ -1517,8 +1506,8 @@ static void d68020_cpsave(void)
 
 static void d68020_cpscc(void)
 {
-	uint extension1;
-	uint extension2;
+	unsigned extension1;
+	unsigned extension2;
 	LIMIT_CPU_TYPES(M68020_PLUS);
 	extension1 = read_imm_16();
 	extension2 = read_imm_16();
@@ -1527,8 +1516,8 @@ static void d68020_cpscc(void)
 
 static void d68020_cptrapcc_0(void)
 {
-	uint extension1;
-	uint extension2;
+	unsigned extension1;
+	unsigned extension2;
 	LIMIT_CPU_TYPES(M68020_PLUS);
 	extension1 = read_imm_16();
 	extension2 = read_imm_16();
@@ -1537,8 +1526,8 @@ static void d68020_cptrapcc_0(void)
 
 static void d68020_cptrapcc_16(void)
 {
-	uint extension1;
-	uint extension2;
+	unsigned extension1;
+	unsigned extension2;
 	LIMIT_CPU_TYPES(M68020_PLUS);
 	extension1 = read_imm_16();
 	extension2 = read_imm_16();
@@ -1547,8 +1536,8 @@ static void d68020_cptrapcc_16(void)
 
 static void d68020_cptrapcc_32(void)
 {
-	uint extension1;
-	uint extension2;
+	unsigned extension1;
+	unsigned extension2;
 	LIMIT_CPU_TYPES(M68020_PLUS);
 	extension1 = read_imm_16();
 	extension2 = read_imm_16();
@@ -1577,14 +1566,14 @@ static void d68040_cpush(void)
 
 static void d68000_dbra(void)
 {
-	uint temp_pc = g_cpu_pc;
+	unsigned temp_pc = g_cpu_pc;
 	sprintf(g_dasm_str, "dbra    D%d, $%x", g_cpu_ir & 7, temp_pc + make_int_16(read_imm_16()));
 	SET_OPCODE_FLAGS(DASMFLAG_STEP_OVER);
 }
 
 static void d68000_dbcc(void)
 {
-	uint temp_pc = g_cpu_pc;
+	unsigned temp_pc = g_cpu_pc;
 	sprintf(g_dasm_str, "db%-2s    D%d, $%x", g_cc[(g_cpu_ir>>8)&0xf], g_cpu_ir & 7, temp_pc + make_int_16(read_imm_16()));
 	SET_OPCODE_FLAGS(DASMFLAG_STEP_OVER);
 }
@@ -1601,7 +1590,7 @@ static void d68000_divu(void)
 
 static void d68020_divl(void)
 {
-	uint extension;
+	unsigned extension;
 	LIMIT_CPU_TYPES(M68020_PLUS);
 	extension = read_imm_16();
 
@@ -1695,7 +1684,7 @@ static void d68040_fpu(void)
 	};
 
 	char mnemonic[40];
-	uint32 w2, src, dst_reg;
+	uint32_t w2, src, dst_reg;
 	LIMIT_CPU_TYPES(M68030_PLUS);
 	w2 = read_imm_16();
 
@@ -1963,7 +1952,7 @@ static void d68000_move_to_usp(void)
 
 static void d68010_movec(void)
 {
-	uint extension;
+	unsigned extension;
 	char* reg_name;
 	char* processor;
 	LIMIT_CPU_TYPES(M68010_PLUS);
@@ -2048,11 +2037,11 @@ static void d68010_movec(void)
 
 static void d68000_movem_pd_16(void)
 {
-	uint data = read_imm_16();
+	unsigned data = read_imm_16();
 	char buffer[40];
-	uint first;
-	uint run_length;
-	uint i;
+	unsigned first;
+	unsigned run_length;
+	unsigned i;
 
 	buffer[0] = 0;
 	for(i=0;i<8;i++)
@@ -2096,11 +2085,11 @@ static void d68000_movem_pd_16(void)
 
 static void d68000_movem_pd_32(void)
 {
-	uint data = read_imm_16();
+	unsigned data = read_imm_16();
 	char buffer[40];
-	uint first;
-	uint run_length;
-	uint i;
+	unsigned first;
+	unsigned run_length;
+	unsigned i;
 
 	buffer[0] = 0;
 	for(i=0;i<8;i++)
@@ -2144,11 +2133,11 @@ static void d68000_movem_pd_32(void)
 
 static void d68000_movem_er_16(void)
 {
-	uint data = read_imm_16();
+	unsigned data = read_imm_16();
 	char buffer[40];
-	uint first;
-	uint run_length;
-	uint i;
+	unsigned first;
+	unsigned run_length;
+	unsigned i;
 
 	buffer[0] = 0;
 	for(i=0;i<8;i++)
@@ -2192,11 +2181,11 @@ static void d68000_movem_er_16(void)
 
 static void d68000_movem_er_32(void)
 {
-	uint data = read_imm_16();
+	unsigned data = read_imm_16();
 	char buffer[40];
-	uint first;
-	uint run_length;
-	uint i;
+	unsigned first;
+	unsigned run_length;
+	unsigned i;
 
 	buffer[0] = 0;
 	for(i=0;i<8;i++)
@@ -2240,11 +2229,11 @@ static void d68000_movem_er_32(void)
 
 static void d68000_movem_re_16(void)
 {
-	uint data = read_imm_16();
+	unsigned data = read_imm_16();
 	char buffer[40];
-	uint first;
-	uint run_length;
-	uint i;
+	unsigned first;
+	unsigned run_length;
+	unsigned i;
 
 	buffer[0] = 0;
 	for(i=0;i<8;i++)
@@ -2288,11 +2277,11 @@ static void d68000_movem_re_16(void)
 
 static void d68000_movem_re_32(void)
 {
-	uint data = read_imm_16();
+	unsigned data = read_imm_16();
 	char buffer[40];
-	uint first;
-	uint run_length;
-	uint i;
+	unsigned first;
+	unsigned run_length;
+	unsigned i;
 
 	buffer[0] = 0;
 	for(i=0;i<8;i++)
@@ -2356,7 +2345,7 @@ static void d68000_movep_er_32(void)
 
 static void d68010_moves_8(void)
 {
-	uint extension;
+	unsigned extension;
 	LIMIT_CPU_TYPES(M68010_PLUS);
 	extension = read_imm_16();
 	if(BIT_B(extension))
@@ -2367,7 +2356,7 @@ static void d68010_moves_8(void)
 
 static void d68010_moves_16(void)
 {
-	uint extension;
+	unsigned extension;
 	LIMIT_CPU_TYPES(M68010_PLUS);
 	extension = read_imm_16();
 	if(BIT_B(extension))
@@ -2378,7 +2367,7 @@ static void d68010_moves_16(void)
 
 static void d68010_moves_32(void)
 {
-	uint extension;
+	unsigned extension;
 	LIMIT_CPU_TYPES(M68010_PLUS);
 	extension = read_imm_16();
 	if(BIT_B(extension))
@@ -2434,7 +2423,7 @@ static void d68000_mulu(void)
 
 static void d68020_mull(void)
 {
-	uint extension;
+	unsigned extension;
 	LIMIT_CPU_TYPES(M68020_PLUS);
 	extension = read_imm_16();
 
@@ -3043,7 +3032,7 @@ static void d68020_unpk_mm(void)
 static void d68851_p000(void)
 {
 	char* str;
-	uint modes = read_imm_16();
+	unsigned modes = read_imm_16();
 
 	// do this after fetching the second PMOVE word so we properly get the 3rd if necessary
 	str = get_ea_mode_str_32(g_cpu_ir);
@@ -3137,22 +3126,22 @@ static void d68851_p000(void)
 
 static void d68851_pbcc16(void)
 {
-	uint32 temp_pc = g_cpu_pc;
+	uint32_t temp_pc = g_cpu_pc;
 
 	sprintf(g_dasm_str, "pb%s %x", g_mmucond[g_cpu_ir&0xf], temp_pc + make_int_16(read_imm_16()));
 }
 
 static void d68851_pbcc32(void)
 {
-	uint32 temp_pc = g_cpu_pc;
+	uint32_t temp_pc = g_cpu_pc;
 
 	sprintf(g_dasm_str, "pb%s %x", g_mmucond[g_cpu_ir&0xf], temp_pc + make_int_32(read_imm_32()));
 }
 
 static void d68851_pdbcc(void)
 {
-	uint32 temp_pc = g_cpu_pc;
-	uint16 modes = read_imm_16();
+	uint32_t temp_pc = g_cpu_pc;
+	uint16_t modes = read_imm_16();
 
 	sprintf(g_dasm_str, "pb%s %x", g_mmucond[modes&0xf], temp_pc + make_int_16(read_imm_16()));
 }
@@ -3494,7 +3483,7 @@ static const opcode_struct g_opcode_info[] =
 };
 
 /* Check if opcode is using a valid ea mode */
-static int valid_ea(uint opcode, uint mask)
+static int valid_ea(unsigned opcode, unsigned mask)
 {
 	if(mask == 0)
 		return 1;
@@ -3540,8 +3529,8 @@ static int valid_ea(uint opcode, uint mask)
 /* Used by qsort */
 static int DECL_SPEC compare_nof_true_bits(const void *aptr, const void *bptr)
 {
-	uint a = ((const opcode_struct*)aptr)->mask;
-	uint b = ((const opcode_struct*)bptr)->mask;
+	unsigned a = ((const opcode_struct*)aptr)->mask;
+	unsigned b = ((const opcode_struct*)bptr)->mask;
 
 	a = ((a & 0xAAAA) >> 1) + (a & 0x5555);
 	a = ((a & 0xCCCC) >> 2) + (a & 0x3333);
@@ -3559,8 +3548,8 @@ static int DECL_SPEC compare_nof_true_bits(const void *aptr, const void *bptr)
 /* build the opcode handler jump table */
 static void build_opcode_table(void)
 {
-	uint i;
-	uint opcode;
+	unsigned i;
+	unsigned opcode;
 	opcode_struct* ostruct;
 	opcode_struct opcode_info[ARRAY_LENGTH(g_opcode_info)];
 
@@ -3600,7 +3589,7 @@ static void build_opcode_table(void)
 /* ======================================================================== */
 
 /* Disasemble one instruction at pc and store in str_buff */
-unsigned int m68k_disassemble(char* str_buff, unsigned int pc, unsigned int cpu_type)
+unsigned m68k_disassemble(char* str_buff, unsigned pc, unsigned cpu_type)
 {
 	if(!g_initialized)
 	{
@@ -3649,7 +3638,7 @@ unsigned int m68k_disassemble(char* str_buff, unsigned int pc, unsigned int cpu_
 	return COMBINE_OPCODE_FLAGS(g_cpu_pc - pc);
 }
 
-char* m68ki_disassemble_quick(unsigned int pc, unsigned int cpu_type)
+char* m68ki_disassemble_quick(unsigned pc, unsigned cpu_type)
 {
 	static char buff[100];
 	buff[0] = 0;
@@ -3657,9 +3646,9 @@ char* m68ki_disassemble_quick(unsigned int pc, unsigned int cpu_type)
 	return buff;
 }
 
-unsigned int m68k_disassemble_raw(char* str_buff, unsigned int pc, const unsigned char* opdata, const unsigned char* argdata, unsigned int cpu_type)
+unsigned m68k_disassemble_raw(char* str_buff, unsigned pc, const unsigned char* opdata, const unsigned char* argdata, unsigned cpu_type)
 {
-	unsigned int result;
+	unsigned result;
 	(void)argdata;
 
 	g_rawop = opdata;
@@ -3670,7 +3659,7 @@ unsigned int m68k_disassemble_raw(char* str_buff, unsigned int pc, const unsigne
 }
 
 /* Check if the instruction is a valid one */
-unsigned int m68k_is_valid_instruction(unsigned int instruction, unsigned int cpu_type)
+unsigned m68k_is_valid_instruction(unsigned instruction, unsigned cpu_type)
 {
 	if(!g_initialized)
 	{
