@@ -371,14 +371,19 @@ static unsigned geo_input_poll_js(unsigned port) {
             if (ret & (1 << bindmap_js[i].k))
                 b &= ~bindmap_js[i].v;
         }
-
-        return b;
+    }
+    else {
+        for (unsigned i = 0; i < 8; ++i) {
+            if (input_state_cb(port, RETRO_DEVICE_JOYPAD, 0, bindmap_js[i].k))
+                b &= ~bindmap_js[i].v;
+        }
     }
 
-    for (unsigned i = 0; i < 8; ++i) {
-        if (input_state_cb(port, RETRO_DEVICE_JOYPAD, 0, bindmap_js[i].k))
-            b &= ~bindmap_js[i].v;
-    }
+    // Prevent opposing directions from being pressed simultaneously
+    if (!(b & 0x01) && !(b & 0x02))
+        b |= 0x03;
+    if (!(b & 0x04) && !(b & 0x08))
+        b |= 0x0c;
 
     return b;
 }
@@ -402,14 +407,19 @@ static unsigned geo_input_poll_js_ftc1b(unsigned port) {
             if (ret & (1 << bindmap_js[i].k))
                 b &= ~bindmap_js[i].v;
         }
-
-        return b;
+    }
+    else {
+        for (unsigned i = 0; i < 8; ++i) {
+            if (input_state_cb(port, RETRO_DEVICE_JOYPAD, 0, bindmap_js[i].k))
+                b &= ~bindmap_js[i].v;
+        }
     }
 
-    for (unsigned i = 0; i < 8; ++i) {
-        if (input_state_cb(port, RETRO_DEVICE_JOYPAD, 0, bindmap_js[i].k))
-            b &= ~bindmap_js[i].v;
-    }
+    // Prevent opposing directions from being pressed simultaneously
+    if (!(b & 0x01) && !(b & 0x02))
+        b |= 0x03;
+    if (!(b & 0x04) && !(b & 0x08))
+        b |= 0x0c;
 
     return b;
 }
