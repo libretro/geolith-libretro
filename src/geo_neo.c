@@ -165,6 +165,18 @@ int geo_neo_load(void *data, size_t size) {
             geo_m68k_board_set(BOARD_CT0);
             break;
         }
+        case 0x066: { // Digger Man (prototype), Karnov's Revenge
+            /* Digger Man (prototype) is not compatible with the AES. Digger
+               Man (prototype) also shares the same NGH with Karnov's Revenge,
+               so use the P ROM size to differentiate the games.
+            */
+            if (romdata->psz < 0x100000 && geo_get_system() == SYSTEM_AES) {
+                geo_log(GEO_LOG_ERR, "This title is compatible with the Neo"
+                    " Geo MVS and Universe BIOS only\n");
+                return 0;
+            }
+            break;
+        }
         case 0x080: { // Quiz King of Fighters
             if (geo_get_region() == REGION_US &&
                 geo_get_system() == SYSTEM_MVS) {
@@ -239,8 +251,14 @@ int geo_neo_load(void *data, size_t size) {
         }
         case 0x263: { // Metal Slug 4
             // mslug4 and mslug4h use FIX bankswitching, ms4plus does not
-            if (neodata[0x1000 + 0x809] != 0x0c)
+            if (neodata[0x1000 + 0x809] != 0x0c) {
                 geo_lspc_set_fix_banksw(FIX_BANKSW_LINE);
+            }
+            else if (geo_get_system() == SYSTEM_AES) {
+                geo_log(GEO_LOG_ERR, "This title is compatible with the Neo"
+                    " Geo MVS and Universe BIOS only\n");
+                return 0;
+            }
             break;
         }
         case 0x266: { // Matrimelee
@@ -261,13 +279,27 @@ int geo_neo_load(void *data, size_t size) {
             break;
         }
         case 0x268: { // Metal Slug 5
-            if (neodata[0x1000 + 0x26b] == 0xb9) // Metal Slug 5 Plus
+            if (neodata[0x1000 + 0x26b] == 0xb9) { // Metal Slug 5 Plus
+                if (geo_get_system() == SYSTEM_AES) {
+                    geo_log(GEO_LOG_ERR, "This title is compatible with the"
+                        " Neo Geo MVS and Universe BIOS only\n");
+                    return 0;
+                }
                 geo_m68k_board_set(BOARD_MS5PLUS);
+            }
             else if (neodata[0x1000 + 0x267] == 0x4f) // Official Releases
                 geo_m68k_board_set(BOARD_PVC);
             break;
         }
         case 0x269: { // SNK vs. Capcom - SVC Chaos
+            if (neodata[0x1000 + 0x9e91] == 0x0f) { // MVS-only bootlegs
+                if (geo_get_system() == SYSTEM_AES) {
+                    geo_log(GEO_LOG_ERR, "This title is compatible with the"
+                        " Neo Geo MVS and Universe BIOS only\n");
+                    return 0;
+                }
+            }
+
             /* The official release, SNK vs. Capcom (bootleg), and
                SNK vs. Capcom Super Plus use the NEO-PVC. The official release
                also uses Fix Bankswitching Type 2 (per-tile banking). The other
@@ -304,7 +336,7 @@ int geo_neo_load(void *data, size_t size) {
                 geo_m68k_board_set(BOARD_KOF10TH);
             break;
         }
-        case 0x3e7: case 0x999: { // Jockey Grand Prix, V-Liner
+        case 0x3e7: case 0x999: { // V-Liner
             /* Some tools set V-Liner's NGH to 999 and others to 3E7. 3E7 is
                correct, but 0x3e7 is 999 in decimal, so it is possible the
                developer intended for it to be 999 but did not realize the NGH
@@ -315,6 +347,12 @@ int geo_neo_load(void *data, size_t size) {
             break;
         }
         case 0x5003: { // Crouching Tiger Hidden Dragon bootlegs
+            if (geo_get_system() == SYSTEM_AES) {
+                geo_log(GEO_LOG_ERR, "This title is compatible with the Neo"
+                    " Geo MVS and Universe BIOS only\n");
+                return 0;
+            }
+
             /* Crouching Tiger Hidden Dragon 2003 Super Plus Alternative
                requires no special handling.
             */
