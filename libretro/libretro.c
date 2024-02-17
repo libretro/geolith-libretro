@@ -60,7 +60,7 @@ static void *romdata = NULL;
 static char gamename[128];
 
 // Save directory for NVRAM, SRAM, and Memory Cards
-const char *savedir;
+static const char *savedir;
 
 // Variables for managing the libretro port
 static int bitmasks = 0;
@@ -96,11 +96,15 @@ static struct retro_input_descriptor input_desc_js[] = { // Joysticks (Default)
 {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A,      "B"},
 {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y,      "C"},
 {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X,      "D"},
-{0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "Select"},
+{0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "Select/Coin"},
 {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START,  "Start"},
-{0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L,      "Coin 1"},
-{0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R,      "Service"},
+{0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L,      "C+D"},
+{0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R,      "A+B"},
+{0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2,     "B+C+D"},
+{0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2,     "A+B+C"},
 {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L3,     "Test"},
+{0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R3,     "Service"},
+
 
 {1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP,     "Up"},
 {1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,   "Down"},
@@ -110,9 +114,12 @@ static struct retro_input_descriptor input_desc_js[] = { // Joysticks (Default)
 {1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A,      "B"},
 {1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y,      "C"},
 {1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X,      "D"},
-{1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "Select"},
+{1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "Select/Coin"},
 {1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START,  "Start"},
-{1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L,      "Coin 2"},
+{1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L,      "C+D"},
+{1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R,      "A+B"},
+{1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2,     "B+C+D"},
+{1, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2,     "A+B+C"},
 
 {2, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP,     "Up"},
 {2, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,   "Down"},
@@ -122,8 +129,12 @@ static struct retro_input_descriptor input_desc_js[] = { // Joysticks (Default)
 {2, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A,      "B"},
 {2, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y,      "C"},
 {2, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X,      "D"},
-{2, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "Select"},
+{2, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "Select/Coin"},
 {2, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START,  "Start"},
+{2, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L,      "C+D"},
+{2, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R,      "A+B"},
+{2, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2,     "B+C+D"},
+{2, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2,     "A+B+C"},
 
 {3, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_UP,     "Up"},
 {3, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_DOWN,   "Down"},
@@ -133,8 +144,12 @@ static struct retro_input_descriptor input_desc_js[] = { // Joysticks (Default)
 {3, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A,      "B"},
 {3, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y,      "C"},
 {3, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X,      "D"},
-{3, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "Select"},
+{3, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "Select/Coin"},
 {3, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START,  "Start"},
+{3, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L,      "C+D"},
+{3, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R,      "A+B"},
+{3, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2,     "B+C+D"},
+{3, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R2,     "A+B+C"},
 
 {0}
 };
@@ -150,7 +165,7 @@ static struct retro_input_descriptor input_desc_vliner[] = { // V-Liner
 {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X,      "Start/Collect"},
 {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "Operator Menu"},
 {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START,  "Clear Credit"},
-{0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_L2,     "Hopper Out"},
+{0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R3,     "Hopper Out"},
 {0}
 };
 
@@ -167,13 +182,17 @@ static kvpair_t bindmap_js[] = {
     { RETRO_DEVICE_ID_JOYPAD_B,         0x10 }, // A
     { RETRO_DEVICE_ID_JOYPAD_A,         0x20 }, // B
     { RETRO_DEVICE_ID_JOYPAD_Y,         0x40 }, // C
-    { RETRO_DEVICE_ID_JOYPAD_X,         0x80 }  // D
+    { RETRO_DEVICE_ID_JOYPAD_X,         0x80 }, // D
+    { RETRO_DEVICE_ID_JOYPAD_L,         0xc0 }, // CD
+    { RETRO_DEVICE_ID_JOYPAD_R,         0x30 }, // AB
+    { RETRO_DEVICE_ID_JOYPAD_L2,        0xe0 }, // BCD
+    { RETRO_DEVICE_ID_JOYPAD_R2,        0x70 }  // ABC
 };
 
 static kvpair_t bindmap_stat_a[] = {
-    { RETRO_DEVICE_ID_JOYPAD_L,         0x06 }, // Coin 1
-    { RETRO_DEVICE_ID_JOYPAD_L,         0x05 }, // Coin 2
-    { RETRO_DEVICE_ID_JOYPAD_R,         0x03 }  // Service
+    { RETRO_DEVICE_ID_JOYPAD_SELECT,    0x06 }, // Coin 1
+    { RETRO_DEVICE_ID_JOYPAD_SELECT,    0x05 }, // Coin 2
+    { RETRO_DEVICE_ID_JOYPAD_R3,        0x03 }  // Service
 };
 
 static kvpair_t bindmap_stat_b[] = {
@@ -192,7 +211,7 @@ static kvpair_t bindmap_vliner[] = {
     { RETRO_DEVICE_ID_JOYPAD_R,         0x02 }, // Coin 2
     { RETRO_DEVICE_ID_JOYPAD_SELECT,    0x10 }, // Operator Menu
     { RETRO_DEVICE_ID_JOYPAD_START,     0x20 }, // Clear Credit
-    { RETRO_DEVICE_ID_JOYPAD_L2,        0x80 }, // Hopper Out
+    { RETRO_DEVICE_ID_JOYPAD_R3,        0x80 }, // Hopper Out
 };
 
 static void geo_retro_log(int level, const char *fmt, ...) {
@@ -218,15 +237,18 @@ static void geo_retro_gamename(const char *path) {
     }
 }
 
-// Coin Slots, Service Button, # of Slots
+// Coin Slots, Service Button
 static unsigned geo_input_poll_stat_a(void) {
     input_poll_cb();
     unsigned c = 0x07;
 
-    if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, bindmap_stat_a[0].k))
-        c &= bindmap_stat_a[0].v;
-    if (input_state_cb(1, RETRO_DEVICE_JOYPAD, 0, bindmap_stat_a[1].k))
-        c &= bindmap_stat_a[1].v;
+    if (systype == SYSTEM_MVS) { // Coins
+        if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, bindmap_stat_a[0].k))
+            c &= bindmap_stat_a[0].v;
+        if (input_state_cb(1, RETRO_DEVICE_JOYPAD, 0, bindmap_stat_a[1].k))
+            c &= bindmap_stat_a[1].v;
+    }
+
     if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, bindmap_stat_a[2].k))
         c &= bindmap_stat_a[2].k;
 
@@ -242,25 +264,18 @@ static unsigned geo_input_poll_stat_b(void) {
     input_poll_cb();
     unsigned s = 0x0f;
 
-    if (bitmasks) {
-        for (unsigned i = 0; i < 2; ++i) {
-            int16_t ret = input_state_cb(i, RETRO_DEVICE_JOYPAD, 0,
-                RETRO_DEVICE_ID_JOYPAD_MASK);
-            if (ret & (1 << bindmap_stat_b[i * 2].k))
-                s &= bindmap_stat_b[i * 2].v;
-            if (ret & (1 << bindmap_stat_b[(i * 2) + 1].k))
-                s &= bindmap_stat_b[(i * 2) + 1].v;
-        }
-
-        return s;
+    /* Select button inserts coins on Universe BIOS in arcade mode. For MVS,
+       it selects the cartridge slot, so do not read these buttons in MVS mode.
+    */
+    if (systype != SYSTEM_MVS) {
+        if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, bindmap_stat_b[0].k))
+            s &= bindmap_stat_b[0].v;
+        if (input_state_cb(1, RETRO_DEVICE_JOYPAD, 0, bindmap_stat_b[2].k))
+            s &= bindmap_stat_b[2].v;
     }
 
-    if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, bindmap_stat_b[0].k))
-        s &= bindmap_stat_b[0].v;
     if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, bindmap_stat_b[1].k))
         s &= bindmap_stat_b[1].v;
-    if (input_state_cb(1, RETRO_DEVICE_JOYPAD, 0, bindmap_stat_b[2].k))
-        s &= bindmap_stat_b[2].v;
     if (input_state_cb(1, RETRO_DEVICE_JOYPAD, 0, bindmap_stat_b[3].k))
         s &= bindmap_stat_b[3].v;
 
@@ -352,6 +367,30 @@ static unsigned geo_input_poll_sys_vliner(void) {
     return b;
 }
 
+// V-Liner Play Buttons
+static unsigned geo_input_poll_vliner(unsigned port) {
+    input_poll_cb();
+    unsigned b = 0xff;
+
+    if (bitmasks) {
+        int16_t ret = input_state_cb(port, RETRO_DEVICE_JOYPAD, 0,
+            RETRO_DEVICE_ID_JOYPAD_MASK);
+
+        for (unsigned i = 0; i < 8; ++i) {
+            if (ret & (1 << bindmap_js[i].k))
+                b &= ~bindmap_js[i].v;
+        }
+    }
+    else {
+        for (unsigned i = 0; i < 8; ++i) {
+            if (input_state_cb(port, RETRO_DEVICE_JOYPAD, 0, bindmap_js[i].k))
+                b &= ~bindmap_js[i].v;
+        }
+    }
+
+    return b;
+}
+
 // Port Unconnected
 static unsigned geo_input_poll_none(unsigned port) {
     (void)port;
@@ -367,13 +406,13 @@ static unsigned geo_input_poll_js(unsigned port) {
         int16_t ret = input_state_cb(port, RETRO_DEVICE_JOYPAD, 0,
             RETRO_DEVICE_ID_JOYPAD_MASK);
 
-        for (unsigned i = 0; i < 8; ++i) {
+        for (unsigned i = 0; i < 12; ++i) {
             if (ret & (1 << bindmap_js[i].k))
                 b &= ~bindmap_js[i].v;
         }
     }
     else {
-        for (unsigned i = 0; i < 8; ++i) {
+        for (unsigned i = 0; i < 12; ++i) {
             if (input_state_cb(port, RETRO_DEVICE_JOYPAD, 0, bindmap_js[i].k))
                 b &= ~bindmap_js[i].v;
         }
@@ -403,13 +442,13 @@ static unsigned geo_input_poll_js_ftc1b(unsigned port) {
         int16_t ret = input_state_cb(port, RETRO_DEVICE_JOYPAD, 0,
             RETRO_DEVICE_ID_JOYPAD_MASK);
 
-        for (unsigned i = 0; i < 8; ++i) {
+        for (unsigned i = 0; i < 12; ++i) {
             if (ret & (1 << bindmap_js[i].k))
                 b &= ~bindmap_js[i].v;
         }
     }
     else {
-        for (unsigned i = 0; i < 8; ++i) {
+        for (unsigned i = 0; i < 12; ++i) {
             if (input_state_cb(port, RETRO_DEVICE_JOYPAD, 0, bindmap_js[i].k))
                 b &= ~bindmap_js[i].v;
         }
@@ -807,6 +846,7 @@ bool retro_load_game(const struct retro_game_info *info) {
     }
 
     if (geo_neo_flags() & GEO_DB_VLINER) {
+        geo_input_set_callback(0, &geo_input_poll_vliner);
         geo_input_set_callback(1, &geo_input_poll_none);
         geo_input_sys_set_callback(0, &geo_input_poll_stat_a_vliner);
         geo_input_sys_set_callback(1, &geo_input_poll_stat_b_vliner);
