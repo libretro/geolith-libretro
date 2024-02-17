@@ -43,6 +43,11 @@ Samurai Shodown 5
 -----------------
  - Some screen transitions show the top right corner slow to update
 
+Shock Troopers: 2nd Squad
+-------------------------
+ - Graphical corruption near top of screen during intro sequence and during
+   gameplay
+
 Super Sidekicks 2
 -----------------
  - Field exhibits some instability due to timer interrupt imperfections
