@@ -774,7 +774,7 @@ static void geo_m68k_write_banksw_16_kof10th(uint32_t addr, uint16_t data) {
  * ---------------------------------------------------------------------
  */
 
-unsigned int m68k_read_memory_8(unsigned int address) {
+unsigned m68k_read_memory_8(unsigned address) {
     if (address < 0x000080) { // Vector Table
         m68k_modify_timeslice(1);
         return vectable ?
@@ -813,7 +813,8 @@ unsigned int m68k_read_memory_8(unsigned int address) {
                    Bit 6:    0 = 2 slots, 1 = 4 or 6 slots
                    Bits 0-5: Unknown
                 */
-                return geo_input_sys_cb[2](); // Active Low
+                // Only 1 and 2 slot System ROMs are supported, therefore ~0x40
+                return geo_input_sys_cb[2]() & ~0x40; // Active Low
             }
             case 0x320000: { // REG_SOUND
                 return ngsys.sound_reply; // Z80 Reply Code
@@ -828,7 +829,8 @@ unsigned int m68k_read_memory_8(unsigned int address) {
                    Bit 1:    Coin-in 2
                    Bit 0:    Coin-in 1
                 */
-                return geo_input_sys_cb[0]() | (geo_rtc_rd() << 6);
+                // Coin slots 3 and 4 are never used, therefore | 0x18
+                return geo_input_sys_cb[0]() | (geo_rtc_rd() << 6) | 0x18;
             }
             case 0x340000: { // REG_P2CNT
                 return geo_input_cb[1](1);
@@ -889,7 +891,7 @@ unsigned int m68k_read_memory_8(unsigned int address) {
     return 0xff;
 }
 
-unsigned int m68k_read_memory_16(unsigned int address) {
+unsigned m68k_read_memory_16(unsigned address) {
     if (address & 0x01)
         geo_log(GEO_LOG_WRN, "Unaligned 16-bit Read: %06x\n", address);
 
@@ -960,12 +962,12 @@ unsigned int m68k_read_memory_16(unsigned int address) {
     return 0xffff;
 }
 
-unsigned int m68k_read_memory_32(unsigned int address) {
+unsigned m68k_read_memory_32(unsigned address) {
     return (m68k_read_memory_16(address) << 16) |
         m68k_read_memory_16(address + 2);
 }
 
-void m68k_write_memory_8(unsigned int address, unsigned int value) {
+void m68k_write_memory_8(unsigned address, unsigned value) {
     address &= 0xffffff;
 
     if (address < 0x100000) { // Fixed 1M Program ROM Bank
@@ -1138,7 +1140,7 @@ void m68k_write_memory_8(unsigned int address, unsigned int value) {
     }
 }
 
-void m68k_write_memory_16(unsigned int address, unsigned int value) {
+void m68k_write_memory_16(unsigned address, unsigned value) {
     if (address & 0x01)
         geo_log(GEO_LOG_WRN, "Unaligned 16-bit Write: %06x %04x\n",
             address, value);
@@ -1238,7 +1240,7 @@ void m68k_write_memory_16(unsigned int address, unsigned int value) {
     }
 }
 
-void m68k_write_memory_32(unsigned int address, unsigned int value) {
+void m68k_write_memory_32(unsigned address, unsigned value) {
     m68k_write_memory_16(address, value >> 16);
     m68k_write_memory_16(address + 2, value & 0xffff);
 }
