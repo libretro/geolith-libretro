@@ -43,6 +43,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "geo_ymfm.h"
 #include "geo_z80.h"
 
+#ifdef __LIBRETRO__
+#include "streams/file_stream_transforms.h"
+#endif
+
 #define DIV_M68K 2
 #define DIV_Z80 6
 #define DIV_YM2610 72 // 72 for medium fidelity, 8 for high
@@ -241,6 +245,7 @@ int geo_bios_load_mem(void *data, size_t size) {
     return geo_bios_load(&zip_archive);
 }
 
+#ifndef __LIBRETRO__
 // Load a zipped collection of System ROM data from a file
 int geo_bios_load_file(const char *biospath) {
     mz_zip_archive zip_archive;
@@ -251,6 +256,7 @@ int geo_bios_load_file(const char *biospath) {
         return 0;
     return geo_bios_load(&zip_archive);
 }
+#endif
 
 void geo_bios_unload(void) {
     if (romdata.b)

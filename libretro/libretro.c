@@ -43,6 +43,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "libretro.h"
 #include "libretro_core_options.h"
 
+#include "streams/file_stream.h"
+
 #if defined(_WIN32)
    static const char pss = '\\';
 #else
@@ -732,8 +734,15 @@ void retro_get_system_av_info(struct retro_system_av_info *info) {
 }
 
 void retro_set_environment(retro_environment_t cb) {
+    struct retro_vfs_interface_info vfs_iface_info;
     environ_cb = cb;
+
     libretro_set_core_options(environ_cb);
+
+    vfs_iface_info.required_interface_version = 1;
+    vfs_iface_info.iface = NULL;
+    if (environ_cb(RETRO_ENVIRONMENT_GET_VFS_INTERFACE, &vfs_iface_info))
+        filestream_vfs_init(&vfs_iface_info);
 }
 
 void retro_set_audio_sample(retro_audio_sample_t cb) {
@@ -790,10 +799,28 @@ bool retro_load_game(const struct retro_game_info *info) {
     snprintf(biospath, sizeof(biospath), "%s%c%s", sysdir, pss,
         systype ? "neogeo.zip" : "aes.zip");
 
-    if (!geo_bios_load_file(biospath)) {
+    RFILE* biosarchive = filestream_open(biospath, RETRO_VFS_FILE_ACCESS_READ, RETRO_VFS_FILE_ACCESS_HINT_NONE);
+    if (!biosarchive) {
+        return false;
+    }
+
+    filestream_seek(biosarchive, 0, RETRO_VFS_SEEK_POSITION_END);
+    int64_t biosarchivesize = filestream_tell(biosarchive);
+    void* biosarchivebuffer = (void*)calloc(1, biosarchivesize);
+    if (!biosarchivebuffer) {
+        return false;
+    }
+    filestream_seek(biosarchive, 0, RETRO_VFS_SEEK_POSITION_START);
+    if (filestream_read(biosarchive, biosarchivebuffer, biosarchivesize) < 0) {
+        free(biosarchivebuffer);
+        return false;
+    }
+    if (!geo_bios_load_mem(biosarchivebuffer, biosarchivesize)) {
         log_cb(RETRO_LOG_ERROR, "Failed to load bios at: %s\n", biospath);
         return false;
     }
+    free(biosarchivebuffer);
+    biosarchivebuffer = NULL;
 
     /* Keep an internal copy of the ROM to avoid relying on the frontend
        keeping it persistently, and to avoid altering memory controlled by
