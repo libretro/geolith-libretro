@@ -245,7 +245,6 @@ int geo_bios_load_mem(void *data, size_t size) {
     return geo_bios_load(&zip_archive);
 }
 
-#ifndef __LIBRETRO__
 // Load a zipped collection of System ROM data from a file
 int geo_bios_load_file(const char *biospath) {
     mz_zip_archive zip_archive;
@@ -256,7 +255,6 @@ int geo_bios_load_file(const char *biospath) {
         return 0;
     return geo_bios_load(&zip_archive);
 }
-#endif
 
 void geo_bios_unload(void) {
     if (romdata.b)
