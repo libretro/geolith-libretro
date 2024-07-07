@@ -43,6 +43,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "libretro.h"
 #include "libretro_core_options.h"
 
+// libretro-common
+#include "streams/file_stream.h"
+
 #if defined(_WIN32)
    static const char pss = '\\';
 #else
@@ -64,6 +67,7 @@ static const char *savedir;
 
 // Variables for managing the libretro port
 static int bitmasks = 0;
+static int vfs = 0;
 static int systype = SYSTEM_AES;
 static int region = REGION_US;
 static int settingmode = 0;
@@ -666,6 +670,15 @@ void retro_init(void) {
     if (environ_cb(RETRO_ENVIRONMENT_GET_INPUT_BITMASKS, NULL))
         bitmasks = 1;
 
+    // Check if the frontend supports VFS
+    struct retro_vfs_interface_info vfs_iface_info;
+    vfs_iface_info.required_interface_version = 1;
+    vfs_iface_info.iface = NULL;
+    if (environ_cb(RETRO_ENVIRONMENT_GET_VFS_INTERFACE, &vfs_iface_info)) {
+        filestream_vfs_init(&vfs_iface_info);
+        vfs = 1;
+    }
+
     // Set initial core options
     check_variables(true);
 
@@ -790,7 +803,35 @@ bool retro_load_game(const struct retro_game_info *info) {
     snprintf(biospath, sizeof(biospath), "%s%c%s", sysdir, pss,
         systype ? "neogeo.zip" : "aes.zip");
 
-    if (!geo_bios_load_file(biospath)) {
+    if (vfs) {
+        RFILE* barchive = filestream_open(biospath,
+            RETRO_VFS_FILE_ACCESS_READ, RETRO_VFS_FILE_ACCESS_HINT_NONE);
+
+        if (!barchive)
+            return false;
+
+        filestream_seek(barchive, 0, RETRO_VFS_SEEK_POSITION_END);
+        int64_t barchivesize = filestream_tell(barchive);
+
+        void* barchivebuf = (void*)calloc(1, barchivesize);
+        if (!barchivebuf)
+            return false;
+
+        filestream_seek(barchive, 0, RETRO_VFS_SEEK_POSITION_START);
+        if (filestream_read(barchive, barchivebuf, barchivesize) < 0) {
+            free(barchivebuf);
+            return false;
+        }
+
+        if (!geo_bios_load_mem(barchivebuf, barchivesize)) {
+            log_cb(RETRO_LOG_ERROR, "Failed to load bios at: %s\n", biospath);
+            return false;
+        }
+
+        free(barchivebuf);
+        barchivebuf = NULL;
+    }
+    else if (!geo_bios_load_file(biospath)) {
         log_cb(RETRO_LOG_ERROR, "Failed to load bios at: %s\n", biospath);
         return false;
     }
