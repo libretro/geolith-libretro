@@ -480,6 +480,101 @@ static void geo_geom_refresh(void) {
     environ_cb(RETRO_ENVIRONMENT_SET_GEOMETRY, &avinfo);
 }
 
+// Load NVRAM, Cartridge RAM, or Memory Card data
+static int geo_savedata_load_vfs(unsigned datatype, const char *filename) {
+    const uint8_t *dataptr = NULL;
+    size_t datasize = 0;
+
+    switch (datatype) {
+        case GEO_SAVEDATA_NVRAM: {
+            if (geo_get_system() == SYSTEM_AES)
+                return 2;
+            dataptr = geo_mem_ptr(GEO_MEMTYPE_NVRAM, &datasize);
+            break;
+        }
+        case GEO_SAVEDATA_CARTRAM: {
+            dataptr = geo_mem_ptr(GEO_MEMTYPE_CARTRAM, &datasize);
+            break;
+        }
+        case GEO_SAVEDATA_MEMCARD: {
+            dataptr = geo_mem_ptr(GEO_MEMTYPE_MEMCARD, &datasize);
+            break;
+        }
+        default: return 2;
+    }
+
+    RFILE *file;
+    int64_t filesize, result;
+
+    // Open the file for reading
+    file = filestream_open(filename,
+        RETRO_VFS_FILE_ACCESS_READ, RETRO_VFS_FILE_ACCESS_HINT_NONE);
+
+    if (!file)
+        return 0;
+
+    // Find out the file's size
+    filestream_seek(file, 0, RETRO_VFS_SEEK_POSITION_END);
+    filesize = filestream_tell(file);
+    filestream_seek(file, 0, RETRO_VFS_SEEK_POSITION_START);
+
+    if (filesize != datasize) {
+        filestream_close(file);
+        return 0;
+    }
+
+    // Read the file into memory and then close it
+    result = filestream_read(file, (void*)dataptr, filesize);
+
+    if (result != filesize) {
+        filestream_close(file);
+        return 0;
+    }
+
+    filestream_close(file);
+
+    return 1; // Success!
+}
+
+// Save NVRAM, Cartridge RAM, or Memory Card data
+static int geo_savedata_save_vfs(unsigned datatype, const char *filename) {
+    const uint8_t *dataptr = NULL;
+    size_t datasize = 0;
+
+    switch (datatype) {
+        case GEO_SAVEDATA_NVRAM: {
+            if (geo_get_system() == SYSTEM_AES)
+                return 2;
+            dataptr = geo_mem_ptr(GEO_MEMTYPE_NVRAM, &datasize);
+            break;
+        }
+        case GEO_SAVEDATA_CARTRAM: {
+            if (!ngsys.sram_present)
+                return 2;
+            dataptr = geo_mem_ptr(GEO_MEMTYPE_CARTRAM, &datasize);
+            break;
+        }
+        case GEO_SAVEDATA_MEMCARD: {
+            dataptr = geo_mem_ptr(GEO_MEMTYPE_MEMCARD, &datasize);
+            break;
+        }
+        default: return 2;
+    }
+
+    RFILE *file;
+    file = filestream_open(filename,
+        RETRO_VFS_FILE_ACCESS_WRITE, RETRO_VFS_FILE_ACCESS_HINT_NONE);
+
+    if (!file)
+        return 0;
+
+    // Write and close the file
+    filestream_write(file, dataptr, datasize);
+    filestream_close(file);
+
+    return 1; // Success!
+}
+
 static void check_variables(bool first_run) {
     struct retro_variable var = {0};
 
@@ -820,8 +915,11 @@ bool retro_load_game(const struct retro_game_info *info) {
         filestream_seek(barchive, 0, RETRO_VFS_SEEK_POSITION_START);
         if (filestream_read(barchive, barchivebuf, barchivesize) < 0) {
             free(barchivebuf);
+            filestream_close(barchive);
             return false;
         }
+
+        filestream_close(barchive);
 
         if (!geo_bios_load_mem(barchivebuf, barchivesize)) {
             log_cb(RETRO_LOG_ERROR, "Failed to load bios at: %s\n", biospath);
@@ -865,7 +963,8 @@ bool retro_load_game(const struct retro_game_info *info) {
         snprintf(savename, sizeof(savename), "%s%c%s.%s",
             savedir, pss, gamename, fext[i]);
 
-        int savestat = geo_savedata_load(i, (const char*)savename);
+        int savestat = vfs ? geo_savedata_load_vfs(i, (const char*)savename) :
+            geo_savedata_load(i, (const char*)savename);
 
         if (savestat == 1)
             log_cb(RETRO_LOG_DEBUG, "Loaded: %s\n", savename);
@@ -911,7 +1010,8 @@ void retro_unload_game(void) {
         snprintf(savename, sizeof(savename), "%s%c%s.%s",
             savedir, pss, gamename, fext[i]);
 
-        int savestat = geo_savedata_save(i, (const char*)savename);
+        int savestat = vfs ? geo_savedata_save_vfs(i, (const char*)savename) :
+            geo_savedata_save(i, (const char*)savename);
 
         if (savestat == 1)
             log_cb(RETRO_LOG_DEBUG, "Saved: %s\n", savename);
