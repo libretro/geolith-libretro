@@ -11,6 +11,13 @@ BIOS files from a recent MAME set are required:
 This is the libretro port of the Geolith emulator, whose upstream repository
 lives at: https://gitlab.com/jgemu/geolith
 
+ROM Set Support
+---------------
+This emulator was written against ROMs with checksums equal to those of the
+LunaGarlic set. It is recommended to use these checksums to verify your
+legally obtained dumps are correct. Check the included "rename-neo.sh" for
+more information.
+
 Input Devices
 -------------
 geolith-libretro supports the following input devices:
