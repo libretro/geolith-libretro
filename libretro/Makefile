@@ -119,6 +119,8 @@ ifeq ($(IOSSDK),)
    IOSSDK := $(shell xcodebuild -version -sdk appletvos Path)
 endif
 	CC = clang -arch arm64 -isysroot $(IOSSDK)
+	CC     += -mappletvos-version-min=11.0
+	SHARED += -mappletvos-version-min=11.0
 
 # Theos
 else ifeq ($(platform), theos_ios)
