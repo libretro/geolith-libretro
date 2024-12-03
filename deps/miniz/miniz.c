@@ -3133,6 +3133,23 @@ static int mz_stat64(const char *path, struct __stat64 *buffer)
 #define MZ_FREOPEN(f, m, s) freopen(f, m, s)
 #define MZ_DELETE_FILE remove
 
+#elif defined(__PROSPERO__)
+#ifndef MINIZ_NO_TIME
+#include <sys/utime.h>
+#endif
+#include <kernel.h>
+#define MZ_FOPEN(f, m) fopen(f, m)
+#define MZ_FCLOSE fclose
+#define MZ_FREAD fread
+#define MZ_FWRITE fwrite
+#define MZ_FTELL64 ftell
+#define MZ_FSEEK64 fseek
+#define MZ_FILE_STAT_STRUCT SceKernelStat
+#define MZ_FILE_STAT sceKernelStat
+#define MZ_FFLUSH fflush
+#define MZ_FREOPEN(f, m, s) freopen(f, m, s)
+#define MZ_DELETE_FILE remove
+
 #elif defined(__TINYC__)
 #ifndef MINIZ_NO_TIME
 #include <sys/utime.h>
@@ -3450,7 +3467,11 @@ static void mz_zip_time_t_to_dos_time(MZ_TIME_T time, mz_uint16 *pDOS_time, mz_u
 #ifndef MINIZ_NO_ARCHIVE_WRITING_APIS
 static mz_bool mz_zip_get_file_modified_time(const char *pFilename, MZ_TIME_T *pTime)
 {
+#ifdef __PROSPERO__
+    MZ_FILE_STAT_STRUCT file_stat;
+#else
     struct MZ_FILE_STAT_STRUCT file_stat;
+#endif
 
     /* On Linux with x86 glibc, this call will fail on large files (I think >= 0x80000000 bytes) unless you compiled with _LARGEFILE64_SOURCE. Argh. */
     if (MZ_FILE_STAT(pFilename, &file_stat) != 0)
@@ -7469,7 +7490,11 @@ mz_bool mz_zip_add_mem_to_archive_file_in_place_v2(const char *pZip_filename, co
 {
     mz_bool status, created_new_archive = MZ_FALSE;
     mz_zip_archive zip_archive;
+#ifdef __PROSPERO__
+    MZ_FILE_STAT_STRUCT file_stat;
+#else
     struct MZ_FILE_STAT_STRUCT file_stat;
+#endif
     mz_zip_error actual_err = MZ_ZIP_NO_ERROR;
 
     mz_zip_zero_struct(&zip_archive);

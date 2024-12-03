@@ -42,10 +42,10 @@ libdir := $(prefix)/lib
 LIBRETRO_INSTALL_DIR := libretro
 
 TARGET_NAME := geolith
-GIT_VERSION := " $(shell git rev-parse --short HEAD || echo unknown)"
-ifneq ($(GIT_VERSION)," unknown")
-	CFLAGS += -DGIT_VERSION=\"$(GIT_VERSION)\"
-endif
+# GIT_VERSION := " $(shell git rev-parse --short HEAD || echo unknown)"
+# ifneq ($(GIT_VERSION)," unknown")
+# 	CFLAGS += -DGIT_VERSION=\"$(GIT_VERSION)\"
+# endif
 
 SPACE :=
 SPACE := $(SPACE) $(SPACE)
@@ -275,6 +275,14 @@ else ifeq ($(platform), vita)
 	AR = arm-vita-eabi-ar$(EXE_EXT)
 	STATIC_LINKING = 1
 	FLAGS += -DVITA
+
+# PS5
+else ifeq ($(platform), ps5)
+	TARGET := $(TARGET_NAME)_libretro_$(platform).prx
+	CC = prospero-clang$(EXE_EXT)
+	CFLAGS += -DMINIZ_NO_TIME
+	SHARED := -shared
+	fpic := -fPIC
 
 # CTR (3DS)
 else ifeq ($(platform), ctr)
@@ -714,7 +722,9 @@ else
 endif
 
 ifeq (,$(findstring msvc,$(platform)))
+ifeq (,$(findstring ps5,$(platform)))
 LIBS += -lm
+endif
 endif
 
 ifeq ($(platform), theos_ios)
