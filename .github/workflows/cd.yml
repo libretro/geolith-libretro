@@ -1,0 +1,89 @@
+name: CD
+
+on:
+  release:
+    types: [created]
+  workflow_dispatch:
+
+env:
+  INCREMENTAL: 0 # force disable incremental makefile builds universally.
+  PS4_SDK_VERSION: "12.000"
+  PS5_SDK_VERSION: "10.000"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build_linux:
+    name: "Build and Release Linux"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.1.1
+      - run: LD=g++ make -C libretro
+      - name: Upload Release Asset
+        uses: alexellis/upload-assets@0.4.0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          asset_paths: '["./libretro/snes9x_libretro.so"]'
+
+  build_osx:
+    name: "Build and Release OSX"
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4.1.1
+      - run: LD=clang++ make -C libretro
+      - name: Upload Release Asset
+        uses: alexellis/upload-assets@0.4.0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          asset_paths: '["./libretro/snes9x_libretro.dylib"]'
+
+  build_windows:
+    name: "Build and Release Windows"
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4.1.1
+      - run: CC=gcc LD=g++ make -C libretro
+      - name: Upload Release Asset
+        uses: alexellis/upload-assets@0.4.0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          asset_paths: '["./libretro/snes9x_libretro.dll"]'
+
+  build_ps5:
+    name: "Build and Release PS5"
+    runs-on:
+      - self-hosted
+      - ps5-sdk-10.000
+      - Windows
+    steps:
+      - uses: actions/checkout@v4.1.1
+      - uses: ./.github/prepare_run
+      - run: make -C libretro platform=ps5
+      - name: Upload Release Asset
+        uses: alexellis/upload-assets@0.4.0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          asset_paths: '["./libretro/snes9x_libretro_ps5.prx"]'
+
+  build_ps4:
+    name: "Build and Release PS4"
+    runs-on:
+      - self-hosted
+      - ps4-sdk-12.000
+      - Windows
+    steps:
+      - uses: actions/checkout@v4.1.1
+      - uses: ./.github/prepare_run
+      - run: make -C libretro platform=ps4
+      - name: Upload Release Asset
+        uses: alexellis/upload-assets@0.4.0
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          asset_paths: '["./libretro/snes9x_libretro_ps4.prx"]'

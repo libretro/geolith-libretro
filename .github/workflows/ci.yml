@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+  workflow_dispatch:
+
+env:
+  INCREMENTAL: 0 # force disable incremental makefile builds universally.
+  PS4_SDK_VERSION: "12.000"
+  PS5_SDK_VERSION: "10.000"
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build_linux:
+    name: "Build Linux"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.1.1
+      - run: LD=g++ make -C libretro
+
+  build_osx:
+    name: "Build OSX"
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4.1.1
+      - run: LD=clang++ make -C libretro
+
+  build_windows:
+    name: "Build Windows"
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4.1.1
+      - run: CC=gcc LD=g++ make -C libretro
+
+  build_ps5:
+    name: "Build PS5"
+    runs-on:
+      - self-hosted
+      - ps5-sdk-10.000
+      - Windows
+    steps:
+      - uses: actions/checkout@v4.1.1
+      - uses: ./.github/prepare_run
+      - run: make -C libretro platform=ps5
+
+  build_ps4:
+    name: "Build PS4"
+    runs-on:
+      - self-hosted
+      - ps4-sdk-12.000
+      - Windows
+    steps:
+      - uses: actions/checkout@v4.1.1
+      - uses: ./.github/prepare_run
+      - run: make -C libretro platform=ps4

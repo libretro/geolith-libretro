@@ -1,0 +1,6 @@
+name: Prepare Bash Run Shell
+description: Proxy action to download shell tools for all jobs.
+runs:
+  using: composite
+  steps:
+    - uses: implicitconversions/github-actions/shell_core@main
