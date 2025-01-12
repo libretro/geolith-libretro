@@ -86,6 +86,18 @@ struct retro_core_option_definition option_defs_us[] = {
       "off"
    },
    {
+      "geolith_force_int_timing",
+      "Force Integer Timing (Restart)",
+      "Force the use of exactly 60Hz internal refresh rate and 48000Hz audio "
+      "sample rate",
+      {
+         { "off", "Off" },
+         { "on", "On" },
+         { NULL, NULL },
+      },
+      "off"
+   },
+   {
       "geolith_4player",
       "Four Player Mode (Restart, Asia/Japan MVS Only)",
       "Set Four Player (dual MVS cabinet) mode for Asia/Japan MVS systems",

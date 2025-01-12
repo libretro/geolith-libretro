@@ -71,6 +71,7 @@ static int vfs = 0;
 static int systype = SYSTEM_AES;
 static int region = REGION_US;
 static int settingmode = 0;
+static int force_int_timing = 0;
 static int freeplay = 0;
 static int fourplayer = 0;
 static int video_crop_t = 8;
@@ -632,6 +633,17 @@ static void check_variables(bool first_run) {
             else
                 settingmode = 0;
         }
+
+        // Force Integer Timing
+        var.key   = "geolith_force_int_timing";
+        var.value = NULL;
+
+        if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+            if (!strcmp(var.value, "on"))
+                force_int_timing = 1;
+            else
+                force_int_timing = 0;
+        }
     }
 
     // Freeplay
@@ -792,7 +804,14 @@ void retro_init(void) {
 
     // Set up audio callback
     geo_mixer_set_callback(geo_cb_audio);
-    geo_mixer_set_raw(); // Bypass the emulator's internal resampler
+
+    if (force_int_timing) {
+        geo_mixer_set_rate(48000);
+        geo_mixer_init();
+    }
+    else {
+        geo_mixer_set_raw(); // Bypass the emulator's internal resampler
+    }
 
     // Finish initialization
     geo_init();
@@ -825,10 +844,17 @@ void retro_get_system_info(struct retro_system_info *info) {
 }
 
 void retro_get_system_av_info(struct retro_system_av_info *info) {
-    info->timing = (struct retro_system_timing) {
-        .fps = systype ? FRAMERATE_MVS : FRAMERATE_AES,
-        .sample_rate = systype ? 55555 : 55943.49
-    };
+    if (force_int_timing) {
+        info->timing = (struct retro_system_timing) {
+            .fps = 60, .sample_rate = 48000
+        };
+    }
+    else {
+        info->timing = (struct retro_system_timing) {
+            .fps = systype ? FRAMERATE_MVS : FRAMERATE_AES,
+            .sample_rate = systype ? 55555 : 55943.49
+        };
+    }
 
     info->geometry = (struct retro_game_geometry) {
         .base_width   = video_width_visible,
