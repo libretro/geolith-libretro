@@ -130,14 +130,23 @@ void geo_ymfm_reset(void) {
     ym2610_reset();
 }
 
+// Mix FM and SSG channels while maintaining a value within the int16_t range
+static inline int16_t mix(int32_t samp0, int32_t samp1) {
+    if (samp0 + samp1 >= 32767)
+        return 32767;
+    else if (samp0 + samp1 <= -32768)
+        return -32768;
+    return samp0 + samp1;
+}
+
 // Clock the YM2610
 size_t geo_ymfm_exec(void) {
     geo_ymfm_timer_tick();
     ym2610_generate(output);
 
     // Mix stereo FM/ADPCM output (0,1) with mono SSG output (2)
-    ymbuf[bufpos++] = output[0] + output[2];
-    ymbuf[bufpos++] = output[1] + output[2];
+    ymbuf[bufpos++] = mix(output[0], output[2]);
+    ymbuf[bufpos++] = mix(output[1], output[2]);
 
     return 1;
 }
