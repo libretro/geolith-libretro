@@ -7,6 +7,10 @@ System ROM (MVS)
  - Top right corner of FIX layer is slow to update leading to a tearing effect
    on the bootup screen
 
+Ganryu
+------
+ - Clicks and pops when performing some actions and in some background music
+
 King of Fighters 2003 (Bootlegs)
 --------------------------------
  - Incorrect zooming
@@ -42,6 +46,10 @@ Samurai Shodown 4
 Samurai Shodown 5
 -----------------
  - Some screen transitions show the top right corner slow to update
+
+Shinobi (Homebrew port for Neo Geo)
+-----------------------------------
+ - Clicks and pops in audio during certain sequences
 
 Shock Troopers: 2nd Squad
 -------------------------
