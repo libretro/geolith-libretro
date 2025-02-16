@@ -52,6 +52,9 @@ static uint8_t m_regdata_b[REGISTERS_B];         // register data
 static adpcm_a_channel m_channel_a[CHANNELS_A];  // array of channels
 static adpcm_b_channel m_channel_b;              // channel
 
+// hacks
+static bool accum_wrap = true; // default to real hardware behaviour
+
 //*********************************************************
 // ADPCM "A" REGISTERS
 //*********************************************************
@@ -249,7 +252,14 @@ static inline bool adpcm_a_channel_clock(uint32_t choffs)
 		delta = -delta;
 
 	// the 12-bit accumulator wraps on the ym2610 and ym2608 (like the msm5205)
-	m_channel_a[choffs].m_accumulator = (m_channel_a[choffs].m_accumulator + delta) & 0xfff;
+	if (accum_wrap)
+	{
+		m_channel_a[choffs].m_accumulator = (m_channel_a[choffs].m_accumulator + delta) & 0xfff;
+	}
+	else {
+		// hack to fix games with glitchy audio
+		m_channel_a[choffs].m_accumulator = clamp(m_channel_a[choffs].m_accumulator + delta, -2048, 2047);
+	}
 
 	// adjust ADPCM step
 	static int8_t const s_step_inc[8] = { -1, -1, -1, -1, 2, 5, 7, 9 };
@@ -899,6 +909,15 @@ uint32_t adpcm_b_engine_read(uint32_t regnum) {
 // status
 uint8_t adpcm_b_engine_status(void) {
 	return adpcm_b_channel_status();
+}
+
+
+//-------------------------------------------------
+// hacks
+//-------------------------------------------------
+
+void adpcm_a_set_accum_wrap(bool wrap) {
+	accum_wrap = wrap;
 }
 
 

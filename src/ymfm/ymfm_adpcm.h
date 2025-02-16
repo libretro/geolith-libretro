@@ -52,6 +52,9 @@ void adpcm_a_engine_output(int32_t *output, uint32_t chanmask);
 // write to the ADPCM-A registers
 void adpcm_a_engine_write(uint32_t regnum, uint8_t data);
 
+// set accumulator wrapping on or off
+void adpcm_a_set_accum_wrap(bool wrap);
+
 // ======================> adpcm_b_engine
 // init
 void adpcm_b_engine_init(void);

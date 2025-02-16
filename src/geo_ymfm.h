@@ -36,6 +36,8 @@ void geo_ymfm_init(void);
 void geo_ymfm_reset(void);
 size_t geo_ymfm_exec(void);
 
+void geo_ymfm_adpcm_wrap(int);
+
 void geo_ymfm_state_load(uint8_t*);
 void geo_ymfm_state_save(uint8_t*);
 

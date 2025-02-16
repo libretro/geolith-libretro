@@ -122,6 +122,10 @@ void geo_set_div68k(int d) {
     irq2_fragmask = oc ? 0x03 : 0x01;
 }
 
+void geo_set_adpcm_wrap(int w) {
+    geo_ymfm_adpcm_wrap(w);
+}
+
 romdata_t* geo_romdata_ptr(void) {
     return &romdata;
 }

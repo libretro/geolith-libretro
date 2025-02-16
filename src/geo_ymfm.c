@@ -151,6 +151,11 @@ size_t geo_ymfm_exec(void) {
     return 1;
 }
 
+// Hacks
+void geo_ymfm_adpcm_wrap(int w) {
+    adpcm_a_set_accum_wrap(w);
+}
+
 // States
 void geo_ymfm_state_load(uint8_t *st) {
     busytimer = geo_serial_pop32(st);

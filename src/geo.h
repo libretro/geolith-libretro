@@ -185,6 +185,7 @@ void geo_set_region(int);
 int geo_get_system(void);
 void geo_set_system(int);
 void geo_set_div68k(int);
+void geo_set_adpcm_wrap(int);
 
 uint32_t geo_calc_mask(unsigned, unsigned);
 
