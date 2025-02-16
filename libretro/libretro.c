@@ -765,6 +765,17 @@ static void check_variables(bool first_run) {
         else
             geo_set_div68k(1);
     }
+
+    // Disable ADPCM Accumulator Wrap
+    var.key   = "geolith_disable_adpcm_wrap";
+    var.value = NULL;
+
+    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+        if (!strcmp(var.value, "on"))
+            geo_set_adpcm_wrap(0);
+        else
+            geo_set_adpcm_wrap(1);
+    }
 }
 
 void retro_init(void) {

@@ -200,10 +200,23 @@ struct retro_core_option_definition option_defs_us[] = {
       },
       "96"
    },
-      {
+   {
       "geolith_oc",
       "Overclocking (Hack)",
       "Annihilate your accuracy with The 24MHz Shock - expect glitches",
+      {
+         { "off", "Off" },
+         { "on", "On" },
+         { NULL, NULL },
+      },
+      "off"
+   },
+   {
+      "geolith_disable_adpcm_wrap",
+      "Disable ADPCM Accumulator Wrap (Hack)",
+      "ADPCM Accumulator Wrap may be disabled to fix sound effects in buggy "
+      "games, for example Ganryu and Nightmare in the Dark. This is a hack, "
+      "and should remain Off for most games.",
       {
          { "off", "Off" },
          { "on", "On" },
