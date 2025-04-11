@@ -55,6 +55,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 // Audio/Video buffers
 static int16_t  *abuf = NULL;
 static uint32_t *vbuf = NULL;
+static size_t numsamps = 0;
 
 // Copy of the ROM data passed in by the frontend
 static void *romdata = NULL;
@@ -469,7 +470,7 @@ static unsigned geo_input_poll_js_ftc1b(unsigned port) {
 }
 
 static void geo_cb_audio(size_t samps) {
-    audio_batch_cb(abuf, samps >> 1);
+    numsamps = samps >> 1;
 }
 
 static void geo_geom_refresh(void) {
@@ -918,6 +919,8 @@ void retro_run(void) {
         video_width_visible,
         video_height_visible,
         LSPC_WIDTH << 2);
+
+    audio_batch_cb(abuf, numsamps);
 }
 
 bool retro_load_game(const struct retro_game_info *info) {
