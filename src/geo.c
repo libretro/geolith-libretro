@@ -81,6 +81,9 @@ static unsigned icycs = 0;
 unsigned oc = 0;
 unsigned irq2_fragmask = 0x01;
 
+// Watchdog Frames
+static unsigned watchdog_frames = 8;
+
 // Set the log callback
 void geo_log_set_callback(void (*cb)(int, const char *, ...)) {
     geo_log = cb;
@@ -124,6 +127,10 @@ void geo_set_div68k(int d) {
 
 void geo_set_adpcm_wrap(int w) {
     geo_ymfm_adpcm_wrap(w);
+}
+
+void geo_set_watchdog_frames(unsigned w) {
+    watchdog_frames = w;
 }
 
 romdata_t* geo_romdata_ptr(void) {
@@ -383,6 +390,7 @@ void geo_init(void) {
     ngsys.irq2_counter = 0;
     ngsys.irq2_frags = 0;
     ngsys.irq2_dec = 0;
+    watchdog_frames = 8;
 
     memset(ngsys.nvram, 0x00, SIZE_64K);
     memset(ngsys.cartram, 0x00, SIZE_8K);
@@ -580,9 +588,12 @@ static inline void geo_watchdog_increment(void) {
     /* If 8 frames have passed since the Watchdog was kicked, assume a bug or
        or hardware fault and recover by resetting the system. The true number
        of cycles needed for this to happen in hardware is 3244030, or slightly
-       under 8 frames of video.
+       under 8 frames of video. Currently there is a single case where the
+       watchdog can be kicked a few cycles too early. Hardware verification
+       or an audit of 68K CPU timing will be required to understand the root
+       cause.
     */
-    if (++ngsys.watchdog >= 8) {
+    if (++ngsys.watchdog >= watchdog_frames) {
         geo_log(GEO_LOG_WRN, "Watchdog reset\n");
         geo_reset(0);
     }

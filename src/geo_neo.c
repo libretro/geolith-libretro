@@ -309,6 +309,11 @@ int geo_neo_load(void *data, size_t size) {
                 geo_lspc_set_fix_banksw(FIX_BANKSW_TILE);
             if (neodata[0x1000 + 0x2f8f] == 0xc0)
                 geo_m68k_board_set(BOARD_PVC);
+
+            /* This game will trigger watchdog early in some cases before the
+               bonus level.
+            */
+            geo_set_watchdog_frames(9);
             break;
         }
         case 0x271: { // KOF 2003
