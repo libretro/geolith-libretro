@@ -75,6 +75,28 @@ struct retro_core_option_definition option_defs_us[] = {
       "us"
    },
    {
+      "geolith_memcard",
+      "Memory Card",
+      "Enable or Disable the Memory Card",
+      {
+         { "off", "Off" },
+         { "on", "On" },
+         { NULL, NULL },
+      },
+      "on"
+   },
+   {
+      "geolith_memcard_wp",
+      "Memory Card Write Protect",
+      "Enable or Disable the Memory Card Write Protect pin",
+      {
+         { "off", "Off" },
+         { "on", "On" },
+         { NULL, NULL },
+      },
+      "off"
+   },
+   {
       "geolith_settingmode",
       "Setting Mode (Restart, DIP Switch)",
       "Bring up the System ROM menu at boot on arcade systems",

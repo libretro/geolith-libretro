@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2022-2024 Rupert Carmichael
+Copyright (c) 2022-2025 Rupert Carmichael
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -72,6 +72,8 @@ static int vfs = 0;
 static int systype = SYSTEM_AES;
 static int region = REGION_US;
 static int settingmode = 0;
+static int memcard = 1;
+static int memcard_wp = 0;
 static int force_int_timing = 0;
 static int freeplay = 0;
 static int fourplayer = 0;
@@ -269,6 +271,12 @@ static unsigned geo_input_poll_stat_a_vliner(void) {
 static unsigned geo_input_poll_stat_b(void) {
     input_poll_cb();
     unsigned s = 0x0f;
+    if (memcard) {
+        if (memcard_wp) s |= 0x40;
+    }
+    else {
+        s |= 0x30;
+    }
 
     /* Select button inserts coins on Universe BIOS in arcade mode. For MVS,
        it selects the cartridge slot, so do not read these buttons in MVS mode.
@@ -292,6 +300,12 @@ static unsigned geo_input_poll_stat_b(void) {
 static unsigned geo_input_poll_stat_b_ftc1b(void) {
     input_poll_cb();
     unsigned s = 0x0f;
+    if (memcard) {
+        if (memcard_wp) s |= 0x40;
+    }
+    else {
+        s |= 0x30;
+    }
 
     if (geo_m68k_reg_poutput() & 0x01) { // Players 2/4 (P1-B, P2-B)
         if (input_state_cb(1, RETRO_DEVICE_JOYPAD, 0, bindmap_stat_b[1].k))
@@ -310,7 +324,14 @@ static unsigned geo_input_poll_stat_b_ftc1b(void) {
 }
 
 static unsigned geo_input_poll_stat_b_vliner(void) {
-    return 0x0f;
+    unsigned s = 0x0f;
+    if (memcard) {
+        if (memcard_wp) s |= 0x40;
+    }
+    else {
+        s |= 0x30;
+    }
+    return s;
 }
 
 // Test button, slot type
@@ -645,6 +666,28 @@ static void check_variables(bool first_run) {
             else
                 force_int_timing = 0;
         }
+    }
+
+    // Memory Card Inserted
+    var.key   = "geolith_memcard";
+    var.value = NULL;
+
+    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+        if (!strcmp(var.value, "on"))
+            memcard = 1;
+        else
+            memcard = 0;
+    }
+
+    // Memory Card Write Protect
+    var.key   = "geolith_memcard_wp";
+    var.value = NULL;
+
+    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+        if (!strcmp(var.value, "on"))
+            memcard_wp = 1;
+        else
+            memcard_wp = 0;
     }
 
     // Freeplay
