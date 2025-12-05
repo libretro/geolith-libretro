@@ -754,7 +754,8 @@ void geo_lspc_run(unsigned cycs) {
             else if (lspc.scanline == LSPC_LINE_BORDER_BOTTOM + 1)
                 geo_m68k_interrupt(IRQ_VBLANK);
         }
-        else if ((start <= 573) && (end > 573)) {
+
+        if ((start <= 573) && (end > 573)) {
             // Arbitrary placement until cycle accuracy is achieved
             geo_lspc_scanline();
 
@@ -763,7 +764,8 @@ void geo_lspc_run(unsigned cycs) {
                     ngsys.irq2_counter = ngsys.irq2_reload;
             }
         }
-        else if ((start <= 712) && (end > 712)) { // This is an educated guess
+
+        if ((start <= 712) && (end > 712)) { // This is an educated guess
             lspc.scanline = (lspc.scanline + 1) % LSPC_SCANLINES;
         }
 
