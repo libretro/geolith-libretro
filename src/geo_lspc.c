@@ -737,30 +737,38 @@ void geo_lspc_run(unsigned cycs) {
        perfect, but the framework for true cycle accuracy in the future is in
        place.
     */
-    for (unsigned i = 0; i < cycs; ++i) {
-        switch (lspc.cyc++) {
-            case 29: {
-                if (lspc.scanline == LSPC_LINE_BORDER_TOP)
-                    geo_lspc_aa();
-                else if (lspc.scanline == LSPC_LINE_BORDER_BOTTOM + 1)
-                    geo_m68k_interrupt(IRQ_VBLANK);
-                break;
-            }
-            case 573: {
-                // Arbitrary placement until cycle accuracy is achieved
-                geo_lspc_scanline();
+    while (cycs) {
+        /* Normally, this loop runs only once. In the case that the cycle per
+           scanline barrier is crossed, it runs enough cycles to finish the
+           scanline in the first iteration, and then runs the rest in a second
+           iteration.
+        */
+        unsigned start = lspc.cyc;
+        unsigned cycsleft = M68K_CYC_PER_LINE - start; // Cycles left for line
+        unsigned runcycs = cycs < cycsleft ? cycs : cycsleft;
+        unsigned end = start + runcycs;
 
-                if (lspc.scanline == LSPC_LINE_BORDER_BOTTOM) {
-                    if (ngsys.irq2_ctrl & IRQ_TIMER_RELOAD_VBLANK)
-                        ngsys.irq2_counter = ngsys.irq2_reload;
-                }
-                break;
-            }
-            case 712: { // This is an educated guess
-                lspc.scanline = (lspc.scanline + 1) % LSPC_SCANLINES;
-                break;
+        if ((start <= 29) && (end > 29)) {
+            if (lspc.scanline == LSPC_LINE_BORDER_TOP)
+                geo_lspc_aa();
+            else if (lspc.scanline == LSPC_LINE_BORDER_BOTTOM + 1)
+                geo_m68k_interrupt(IRQ_VBLANK);
+        }
+        else if ((start <= 573) && (end > 573)) {
+            // Arbitrary placement until cycle accuracy is achieved
+            geo_lspc_scanline();
+
+            if (lspc.scanline == LSPC_LINE_BORDER_BOTTOM) {
+                if (ngsys.irq2_ctrl & IRQ_TIMER_RELOAD_VBLANK)
+                    ngsys.irq2_counter = ngsys.irq2_reload;
             }
         }
+        else if ((start <= 712) && (end > 712)) { // This is an educated guess
+            lspc.scanline = (lspc.scanline + 1) % LSPC_SCANLINES;
+        }
+
+        lspc.cyc = end;
+        cycs -= runcycs;
 
         lspc.cyc %= M68K_CYC_PER_LINE;
     }
