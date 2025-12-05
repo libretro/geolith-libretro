@@ -31,8 +31,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stddef.h>
 #include <stdint.h>
 
-#include <stdio.h>
-
 #include "geo.h"
 #include "geo_m68k.h"
 #include "geo_lspc.h"
@@ -131,14 +129,11 @@ static inline uint32_t geo_lspc_backdrop(void) {
 static inline void geo_lspc_bdsprline(void) {
     uint32_t bdcol = geo_lspc_backdrop();
     uint32_t *ptr = vbuf + (lspc.scanline * LSPC_WIDTH);
+    unsigned *lb = linebuf[lbactive];
 
     for (unsigned p = 0; p < LSPC_WIDTH; ++p) {
-        if (linebuf[lbactive][p])
-            ptr[p] = palette[linebuf[lbactive][p]];
-        else
-            ptr[p] = bdcol;
-
-        linebuf[lbactive][p] = 0;
+        ptr[p] = lb[p] ? palette[lb[p]] : bdcol;
+        lb[p] = 0;
     }
 }
 
@@ -596,7 +591,7 @@ static inline void geo_lspc_sprcalc(void) {
             }
         }
 
-        srow = romdata->l0[(vshrink << 8) + (zrow & 0xff)];
+        srow = romdata->l0[(vshrink << 8) + zrow];
 
         if (invert)
             srow ^= 0x1ff;
