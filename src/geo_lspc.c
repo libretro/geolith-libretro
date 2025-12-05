@@ -150,13 +150,15 @@ static inline void geo_lspc_palconv(uint16_t addr, uint16_t data) {
        =================================================
        Colour values are 6 bits, made up of 5 colour bits and a global "dark"
        bit which acts as the least significant bit for the R, G, and B values.
+       An important note is that the "dark" bit is inverted. When set, the LSB
+       should be 0, and when unset the LSB should be 1.
     */
     unsigned r = (((data >> 6) & 0x3c) | ((data >> 13) & 0x02) |
-        ((data >> 15) & 0x01));
+        ((data >> 15) ^ 0x01));
     unsigned g = (((data >> 2) & 0x3c) | ((data >> 12) & 0x02) |
-        ((data >> 15) & 0x01));
+        ((data >> 15) ^ 0x01));
     unsigned b = (((data << 2) & 0x3c) | ((data >> 11) & 0x02) |
-        ((data >> 15) & 0x01));
+        ((data >> 15) ^ 0x01));
 
     /* Scale the 6-bit values to 8-bit values as percentages of a maximum.
        This is an integer equivalent of "((colour * 255.0) / 63.0) + 0.5",
@@ -174,7 +176,6 @@ static inline void geo_lspc_palconv(uint16_t addr, uint16_t data) {
     g >>= 1;
     b >>= 1;
     palette_shadow[addr] = 0xff000000 | (r << 16) | (g << 8) | b;
-
 }
 
 // Read half of a a palette RAM entry from the active bank
