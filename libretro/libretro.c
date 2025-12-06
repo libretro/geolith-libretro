@@ -77,6 +77,7 @@ static int memcard_wp = 0;
 static int force_int_timing = 0;
 static int freeplay = 0;
 static int fourplayer = 0;
+static int palette = 0;
 static int video_crop_t = 8;
 static int video_crop_b = 8;
 static int video_crop_l = 8;
@@ -769,6 +770,17 @@ static void check_variables(bool first_run) {
     // Recalculate visible video dimensions as they may have changed
     video_width_visible = LSPC_WIDTH - (video_crop_l + video_crop_r);
     video_height_visible = LSPC_HEIGHT - (video_crop_t + video_crop_b + 16);
+
+    // Palette
+    var.key   = "geolith_palette";
+    var.value = NULL;
+
+    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+        if (!strcmp(var.value, "resnet"))
+            geo_lspc_set_palette(0);
+        else
+            geo_lspc_set_palette(1);
+    }
 
     // Aspect Ratio
     var.key   = "geolith_aspect";

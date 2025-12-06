@@ -198,6 +198,17 @@ struct retro_core_option_definition option_defs_us[] = {
       "8"
    },
    {
+      "geolith_palette",
+      "Palette",
+      "Set the Palette",
+      {
+         { "resnet", "Resistor Network" },
+         { "raw", "Raw" },
+         { NULL, NULL },
+      },
+      "resnet"
+   },
+   {
       "geolith_aspect",
       "Aspect Ratio",
       "Set the Aspect Ratio",

@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2022-2024 Rupert Carmichael
+Copyright (c) 2022-2025 Rupert Carmichael
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -45,6 +45,8 @@ static romdata_t *romdata = NULL;
 
 static uint32_t *vbuf = NULL;
 
+static unsigned sprlimit = 96; // Sprites-per-line limit
+
 static unsigned linebuf[2][LSPC_WIDTH]; // Line buffers for sprite pixels
 static unsigned lbactive = 0; // Active line buffer
 
@@ -58,8 +60,9 @@ static uint32_t palette_normal[SIZE_8K];
 static uint32_t palette_shadow[SIZE_8K];
 static uint32_t *palette = palette_normal;
 
-// Sprites-per-line limit
-static unsigned sprlimit = 96;
+// Palette lookup tables
+static unsigned lut_normal[64];
+static unsigned lut_shadow[64];
 
 // Horizontal Shrink LUT -- from neogeodev
 static unsigned lut_hshrink[0x10][0x10] = {
@@ -81,6 +84,225 @@ static unsigned lut_hshrink[0x10][0x10] = {
     { 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1 }, // (no pixels skipped, full size)
 };
 
+// Generate the "Raw" palette LUT
+static void geo_lspc_palgen_raw(void) {
+    // 6 bits means 64 iterations, as we include the "dark" bit as the LSB here
+    for (unsigned i = 0; i < (1 << 6); i++) {
+        // Invert the "dark" bit
+        unsigned raw = i ^ 0x01;
+
+        /* Scale the 6-bit values to 8-bit values as percentages of a maximum.
+           This is an integer equivalent of "((colour * 255.0) / 63.0) + 0.5",
+           which results in the same integer value in all possible cases.
+        */
+        unsigned val = (raw * 259 + 33) >> 6;
+
+        // Populate normal palette entry
+        lut_normal[i] = val;
+
+        /* Populate shadow palette entry by dividing original values in half
+           to approximate a 150 ohm pulldown.
+        */
+        lut_shadow[i] = val >> 1;
+    }
+}
+
+// Generate the "Resistor Network" palette LUT
+static void geo_lspc_palgen_resnet(void) {
+    /* The Neo Geo uses a resistor ladder DAC to convert digital palette values
+       to analog RGB output. Each colour channel has 5 bits driving resistors
+       connected to either VCC or GND based on the bit value. The output
+       voltage is determined by the voltage divider formed by resistors to VCC
+       versus resistors to GND.
+
+       Additionally, a "dark" bit and "shadow" register can activate pulldown
+       resistors to GND, reducing the output voltage (darkening the colour).
+
+       Resistor Values (from schematic):
+       Bit 0 (LSB): 220 ohms
+       Bit 1:       470 ohms
+       Bit 2:       1000 ohms
+       Bit 3:       2200 ohms
+       Bit 4 (MSB): 3900 ohms
+
+       Dark bit pulldown: 8200 ohms (from Palette RAM entry)
+       Shadow pulldown:   150 ohms (activated by REG_SHADOW)
+
+       The dark bit signal passes through a 74LS05 open collector inverter
+       before reaching the pulldown resistor on each RGB channel.
+    */
+    double resistance[5] = { 3900.0, 2200.0, 1000.0, 470.0, 220.0 };
+    double pd_dark = 8200.0;
+    double pd_shadow = 150.0;
+
+    /* First pass: compute raw resistor network voltages for all 32 values.
+       For each bit pattern, resistors with their bit set connect to VCC, while
+       resistors with their bit clear connect to GND. Resistors in parallel
+       combine as: Rtotal = (R1 * R2) / (R1 + R2).
+
+       The output voltage is determined by the voltage divider:
+       VOUT = VCC * (r_to_gnd / (r_to_vcc + r_to_gnd))
+
+       When all bits are 1, r_to_gnd is infinite (open circuit), so VOUT = VCC
+       (maximum brightness, normalized to 1.0). When all bits are 0, r_to_vcc
+       is infinite, so VOUT = 0.
+    */
+    double v_raw[32];
+    for (unsigned i = 0; i < 32; ++i) {
+        double r_to_vcc = 0.0;
+        double r_to_gnd = 0.0;
+
+        for (int b = 0; b < 5; ++b) {
+            double r = resistance[b];
+            if (i & (1 << b)) {
+                r_to_vcc =
+                    (r_to_vcc == 0.0) ? r : (r_to_vcc * r) / (r_to_vcc + r);
+            }
+            else {
+                r_to_gnd =
+                    (r_to_gnd == 0.0) ? r : (r_to_gnd * r) / (r_to_gnd + r);
+            }
+        }
+
+        if (r_to_vcc == 0.0)
+            v_raw[i] = 0.0;
+        else if (r_to_gnd == 0.0)
+            v_raw[i] = 1.0;
+        else
+            v_raw[i] = r_to_gnd / (r_to_vcc + r_to_gnd);
+    }
+
+    /* Second pass: smooth the raw voltages using weighted neighbour averaging.
+       The schematic resistor values do not produce perfectly linear steps,
+       which results in visible banding in colour gradients. A weighted average
+       with neighbouring values smooths the curve while retaining the overall
+       characteristics of the resistor network. Neighbours are weighted more
+       heavily than the current value for optimal smoothing.
+    */
+    double v_smooth[32];
+    v_smooth[0] = v_raw[0];
+    v_smooth[31] = v_raw[31];
+    for (unsigned i = 1; i < 31; ++i) {
+        v_smooth[i] =
+            (v_raw[i - 1] * 2.0 + v_raw[i] + v_raw[i + 1] * 2.0) / 5.0;
+    }
+
+    /* Normalize the smoothed voltages to the 0.0-1.0 range. The endpoints are
+       used as the minimum and maximum values for normalization.
+    */
+    double v_min = v_smooth[0];
+    double v_max = v_smooth[31];
+
+    /* Third pass: generate LUT entries using the smoothed base values with
+       dark and shadow attenuation factors calculated from the resistor network.
+    */
+    for (unsigned i = 0; i < (1 << 5); ++i) {
+        double r_to_vcc = 0.0;
+        double r_to_gnd = 0.0;
+
+        for (unsigned b = 0; b < 5; ++b) {
+            double r = resistance[b];
+            if (i & (1 << b)) {
+                r_to_vcc =
+                    (r_to_vcc == 0.0) ? r : (r_to_vcc * r) / (r_to_vcc + r);
+            }
+            else {
+                r_to_gnd =
+                    (r_to_gnd == 0.0) ? r : (r_to_gnd * r) / (r_to_gnd + r);
+            }
+        }
+
+        // Scale the normalized voltage to 8-bit output range (0-255)
+        double v_normalized = (v_smooth[i] - v_min) / (v_max - v_min);
+        double base = v_normalized * 255.0;
+
+        double factor_dark = 1.0;
+        double factor_shad = 1.0;
+        double factor_darkshad = 1.0;
+
+        if (r_to_vcc > 0.0) {
+            double v_normal =
+                (r_to_gnd == 0.0) ? 1.0 : r_to_gnd / (r_to_vcc + r_to_gnd);
+
+            /* The dark pulldown resistor is added in parallel with r_to_gnd,
+               providing an additional path to ground and reducing VOUT.
+            */
+            double r_gnd_dark = (r_to_gnd == 0.0) ? pd_dark :
+                (r_to_gnd * pd_dark) / (r_to_gnd + pd_dark);
+            double v_dark = r_gnd_dark / (r_to_vcc + r_gnd_dark);
+
+            /* The shadow pulldown works the same way as dark, but with a much
+               lower resistance (150 ohms), causing a stronger darkening effect.
+            */
+            double r_gnd_shadow = (r_to_gnd == 0.0) ?
+                pd_shadow : (r_to_gnd * pd_shadow) / (r_to_gnd + pd_shadow);
+            double v_shadow = r_gnd_shadow / (r_to_vcc + r_gnd_shadow);
+
+            /* When both are active, the two pulldown resistors are in parallel
+               with each other and with r_to_gnd.
+            */
+            double combined = (pd_dark * pd_shadow) / (pd_dark + pd_shadow);
+            double r_gnd_both = (r_to_gnd == 0.0) ?
+                combined : (r_to_gnd * combined) / (r_to_gnd + combined);
+            double v_both = r_gnd_both / (r_to_vcc + r_gnd_both);
+
+            /* The ratio of darkened voltage to normal voltage gives us the
+               factor by which the base colour value should be multiplied.
+            */
+            if (v_normal > 0.0) {
+                factor_dark = v_dark / v_normal;
+                factor_shad = v_shadow / v_normal;
+                factor_darkshad = v_both / v_normal;
+            }
+        }
+
+        /* The 6-bit LUT index has the 5-bit colour value in bits 5-1 and the
+           dark bit in bit 0. When the dark bit is 1, the dark pulldown is
+           active (darker output), otherwise we have normal brightness.
+        */
+        unsigned light = (i << 1) | 0;
+        unsigned dark = (i << 1) | 1;
+
+        lut_normal[light] = (uint8_t)(base + 0.5);
+        lut_normal[dark] = (uint8_t)(base * factor_dark + 0.5);
+
+        lut_shadow[light] = (uint8_t)(base * factor_shad + 0.5);
+        lut_shadow[dark] = (uint8_t)(base * factor_darkshad + 0.5);
+    }
+}
+
+static inline void geo_lspc_palconv(uint16_t addr, uint16_t data) {
+    /* Colour Format
+       =================================================
+       |D0|R1|G1|B1|R5|R4|R3|R2|G5|G4|G3|G2|B5|B4|B3|B2|
+       =================================================
+       Colour values are 5 bits, accompanied by a global "dark" bit, which
+       enables an 8200 ohm pulldown on each colour channel when set. For the
+       "Raw" palette LUT, this bit is simply treated as the least significant
+       bit for 6-bit R, G, and B values.
+
+       An important note is that the "dark" bit is inverted, since in hardware
+       this line is connected to a 74LS05 per colour channel, which inverts the
+       signal -- this inversion is handled inside the LUT generators.
+
+       Similarly, when REG_SHADOW is set, a 150 ohm pulldown is enabled on each
+       colour channel. The REG_SHADOW values are stored in a separate LUT for
+       simplicity.
+    */
+    unsigned r = (((data >> 6) & 0x3c) | ((data >> 13) & 0x02) |
+        ((data >> 15) & 0x01));
+    unsigned g = (((data >> 2) & 0x3c) | ((data >> 12) & 0x02) |
+        ((data >> 15) & 0x01));
+    unsigned b = (((data << 2) & 0x3c) | ((data >> 11) & 0x02) |
+        ((data >> 15) & 0x01));
+
+    palette_normal[addr] = 0xff000000 |
+        (lut_normal[r] << 16) | (lut_normal[g] << 8) | lut_normal[b];
+
+    palette_shadow[addr] = 0xff000000 |
+        (lut_shadow[r] << 16) | (lut_shadow[g] << 8) | lut_shadow[b];
+}
+
 // Set the pointer to the video buffer
 void geo_lspc_set_buffer(uint32_t *ptr) {
     vbuf = ptr;
@@ -89,6 +311,17 @@ void geo_lspc_set_buffer(uint32_t *ptr) {
 // Set the sprites-per-line limit
 void geo_lspc_set_sprlimit(unsigned limit) {
     sprlimit = limit;
+}
+
+void geo_lspc_set_palette(unsigned p) {
+    if (p) // Raw
+        geo_lspc_palgen_raw();
+    else // Resistor Network
+        geo_lspc_palgen_resnet();
+
+    // Set output palette entries to match newly selected palette
+    for (unsigned i = 0; i < (SIZE_16K >> 1); ++i)
+        geo_lspc_palconv(i, lspc.palram[i]);
 }
 
 // Perform post-load operations for C ROM
@@ -135,42 +368,6 @@ static inline void geo_lspc_bdsprline(void) {
         ptr[p] = lb[p] ? palette[lb[p]] : bdcol;
         lb[p] = 0;
     }
-}
-
-// Convert a palette RAM entry to a host-friendly output value
-static inline void geo_lspc_palconv(uint16_t addr, uint16_t data) {
-    /* Colour Format
-       =================================================
-       |D0|R1|G1|B1|R5|R4|R3|R2|G5|G4|G3|G2|B5|B4|B3|B2|
-       =================================================
-       Colour values are 6 bits, made up of 5 colour bits and a global "dark"
-       bit which acts as the least significant bit for the R, G, and B values.
-       An important note is that the "dark" bit is inverted. When set, the LSB
-       should be 0, and when unset the LSB should be 1.
-    */
-    unsigned r = (((data >> 6) & 0x3c) | ((data >> 13) & 0x02) |
-        ((data >> 15) ^ 0x01));
-    unsigned g = (((data >> 2) & 0x3c) | ((data >> 12) & 0x02) |
-        ((data >> 15) ^ 0x01));
-    unsigned b = (((data << 2) & 0x3c) | ((data >> 11) & 0x02) |
-        ((data >> 15) ^ 0x01));
-
-    /* Scale the 6-bit values to 8-bit values as percentages of a maximum.
-       This is an integer equivalent of "((colour * 255.0) / 63.0) + 0.5",
-       which results in the same integer value in all possible cases.
-    */
-    r = (r * 259 + 33) >> 6;
-    g = (g * 259 + 33) >> 6;
-    b = (b * 259 + 33) >> 6;
-
-    // Populate normal palette entry
-    palette_normal[addr] = 0xff000000 | (r << 16) | (g << 8) | b;
-
-    // Populate shadow palette entry by dividing original values in half
-    r >>= 1;
-    g >>= 1;
-    b >>= 1;
-    palette_shadow[addr] = 0xff000000 | (r << 16) | (g << 8) | b;
 }
 
 // Read half of a a palette RAM entry from the active bank

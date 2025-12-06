@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2022-2024 Rupert Carmichael
+Copyright (c) 2022-2025 Rupert Carmichael
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -90,6 +90,7 @@ void geo_lspc_set_buffer(uint32_t*);
 void geo_lspc_set_fix_banksw(unsigned);
 void geo_lspc_set_fix(unsigned);
 void geo_lspc_set_sprlimit(unsigned);
+void geo_lspc_set_palette(unsigned);
 
 void geo_lspc_postload(void);
 
