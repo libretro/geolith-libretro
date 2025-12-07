@@ -87,7 +87,7 @@ static unsigned lut_hshrink[0x10][0x10] = {
 // Generate the "Raw" palette LUT
 static void geo_lspc_palgen_raw(void) {
     // 6 bits means 64 iterations, as we include the "dark" bit as the LSB here
-    for (unsigned i = 0; i < (1 << 6); i++) {
+    for (unsigned i = 0; i < (1 << 6); ++i) {
         // Invert the "dark" bit
         unsigned raw = i ^ 0x01;
 
@@ -148,7 +148,7 @@ static void geo_lspc_palgen_resnet(void) {
        is infinite, so VOUT = 0.
     */
     double v_raw[32];
-    for (unsigned i = 0; i < 32; ++i) {
+    for (unsigned i = 0; i < (1 << 5); ++i) {
         double r_to_vcc = 0.0;
         double r_to_gnd = 0.0;
 
@@ -184,7 +184,7 @@ static void geo_lspc_palgen_resnet(void) {
     v_smooth[31] = v_raw[31];
     for (unsigned i = 1; i < 31; ++i) {
         v_smooth[i] =
-            (v_raw[i - 1] * 2.0 + v_raw[i] + v_raw[i + 1] * 2.0) / 5.0;
+            (v_raw[i - 1] * 1.6 + v_raw[i] + v_raw[i + 1] * 1.6) / 4.2;
     }
 
     /* Normalize the smoothed voltages to the 0.0-1.0 range. The endpoints are
