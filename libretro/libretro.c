@@ -70,6 +70,7 @@ static const char *savedir;
 static int bitmasks = 0;
 static int vfs = 0;
 static int systype = SYSTEM_AES;
+static int unihw = SYSTEM_MVS;
 static int region = REGION_US;
 static int settingmode = 0;
 static int memcard = 1;
@@ -85,6 +86,7 @@ static int video_crop_r = 8;
 static int video_width_visible = LSPC_WIDTH_VISIBLE;
 static int video_height_visible = LSPC_HEIGHT_VISIBLE;
 static float video_aspect = 0.0;
+static unsigned coins34 = 0x00;
 
 // libretro callbacks
 static retro_log_printf_t log_cb = NULL;
@@ -260,6 +262,8 @@ static unsigned geo_input_poll_stat_a(void) {
 
     if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, bindmap_stat_a[2].k))
         c &= bindmap_stat_a[2].k;
+
+    c |= coins34;
 
     return c;
 }
@@ -616,6 +620,17 @@ static void check_variables(bool first_run) {
                 systype = SYSTEM_UNI;
         }
 
+        // Universe BIOS Hardware
+        var.key   = "geolith_unibios_hw";
+        var.value = NULL;
+
+        if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+            if (!strcmp(var.value, "aes"))
+                unihw = SYSTEM_AES;
+            else if (!strcmp(var.value, "mvs"))
+                unihw = SYSTEM_MVS;
+        }
+
         // Region
         var.key   = "geolith_region";
         var.value = NULL;
@@ -855,6 +870,15 @@ void retro_init(void) {
 
     // Set initial core options
     check_variables(true);
+
+    /* Set coin slot 3 and 4 bits for REG_STATUS_A reads depending on hardware.
+       Geolith never uses slots 3 and 4 when emulating MVS hardware, so these
+       bits need to be set high (they are active low).
+    */
+    if ((systype == SYSTEM_MVS) ||
+        (systype == SYSTEM_UNI && unihw == SYSTEM_MVS)) {
+        coins34 = 0x18;
+    }
 
     // Set up logging and system type
     geo_log_set_callback(geo_retro_log);

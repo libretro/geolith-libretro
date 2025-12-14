@@ -62,6 +62,17 @@ struct retro_core_option_definition option_defs_us[] = {
       "aes"
    },
    {
+      "geolith_unibios_hw",
+      "Universe BIOS Hardware (Restart)",
+      "Specify the hardware the Universe BIOS should detect",
+      {
+         { "aes", "Neo Geo AES (Home Console)" },
+         { "mvs", "Neo Geo MVS (Arcade)" },
+         { NULL, NULL },
+      },
+      "mvs"
+   },
+   {
       "geolith_region",
       "Region (Restart)",
       "Specify the Region: USA, Japan, Asia, Europe",
