@@ -828,9 +828,11 @@ unsigned m68k_read_memory_8(unsigned address) {
                    Bit 2:    Service Button
                    Bit 1:    Coin-in 2
                    Bit 0:    Coin-in 1
+
+                   Note: Universe BIOS on AES hardware requires bits 3 and 4
+                         to be unset.
                 */
-                // Coin slots 3 and 4 are never used, therefore | 0x18
-                return geo_input_sys_cb[0]() | (geo_rtc_rd() << 6) | 0x18;
+                return geo_input_sys_cb[0]() | (geo_rtc_rd() << 6);
             }
             case 0x340000: { // REG_P2CNT
                 return geo_input_cb[1](1);
