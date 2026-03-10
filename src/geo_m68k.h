@@ -60,6 +60,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 void geo_m68k_init(void);
 void geo_m68k_reset(void);
 
+void geo_m68k_set_memmap_cart(void);
+void geo_m68k_set_memmap_cd(void);
+
 int geo_m68k_run(unsigned);
 
 void geo_m68k_interrupt(unsigned);
