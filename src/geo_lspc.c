@@ -30,14 +30,17 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 #include "geo.h"
+#include "geo_cd.h"
 #include "geo_m68k.h"
 #include "geo_lspc.h"
 #include "geo_serial.h"
 
 #define M68K_CYC_PER_LINE 768
 
+static void geo_lspc_fixline_default(void);
 static void (*geo_lspc_fixline)(void);
 
 static lspc_t lspc;
@@ -324,6 +327,14 @@ void geo_lspc_set_palette(unsigned p) {
         geo_lspc_palconv(i, lspc.palram[i]);
 }
 
+void geo_lspc_set_cd_mode(int enabled) {
+    lspc.cd_mode = enabled ? 1 : 0;
+}
+
+void geo_lspc_set_skip_rendering(int skip) {
+    lspc.skip_rendering = skip ? 1 : 0;
+}
+
 // Perform post-load operations for C ROM
 void geo_lspc_postload(void) {
     crommask = geo_calc_mask(32, romdata->csz >> 7);
@@ -395,7 +406,8 @@ void geo_lspc_palram_wr08(uint32_t addr, uint8_t data) {
         lspc.palram[(addr & 0x0fff) + (lspc.palbank * SIZE_4K)] |= (data << 8);
     }
 
-    geo_lspc_palconv(((addr >> 1) & 0x0fff) + (lspc.palbank * SIZE_4K), data);
+    uint16_t idx = (addr & 0x0fff) + (lspc.palbank * SIZE_4K);
+    geo_lspc_palconv(idx, lspc.palram[idx]);
 }
 
 // Write a value to the active bank of palette RAM
@@ -485,6 +497,10 @@ void geo_lspc_init(void) {
     geo_lspc_shadow_wr(0);
 
     romdata = geo_romdata_ptr();
+
+    // Default fix line renderer and fix data pointer
+    geo_lspc_fixline = &geo_lspc_fixline_default;
+    fixdata = romdata->s ? romdata->s : romdata->sfix;
 }
 
 // No Fix Layer Banking (Default)
@@ -706,10 +722,21 @@ static inline unsigned geo_lspc_tpix(unsigned tbase, unsigned x, unsigned y) {
               reverse order from how it is displayed unless horizontal flip
               is enabled for the tile.
     */
-    unsigned v0 = (romdata->c[(tbase + 0) + (y << 2)]) >> (x);
-    unsigned v1 = (romdata->c[(tbase + 2) + (y << 2)]) >> (x);
-    unsigned v2 = (romdata->c[(tbase + 1) + (y << 2)]) >> (x);
-    unsigned v3 = (romdata->c[(tbase + 3) + (y << 2)]) >> (x);
+    unsigned base = tbase + (y << 2);
+    unsigned v0, v1, v2, v3;
+    if (lspc.cd_mode) {
+        // CD SPR DRAM: non-interleaved byte order [1, 0, 3, 2]
+        v0 = (romdata->c[base + 1]) >> (x);
+        v1 = (romdata->c[base + 0]) >> (x);
+        v2 = (romdata->c[base + 3]) >> (x);
+        v3 = (romdata->c[base + 2]) >> (x);
+    } else {
+        // Cart C ROM: interleaved odd/even byte order [0, 2, 1, 3]
+        v0 = (romdata->c[base + 0]) >> (x);
+        v1 = (romdata->c[base + 2]) >> (x);
+        v2 = (romdata->c[base + 1]) >> (x);
+        v3 = (romdata->c[base + 3]) >> (x);
+    }
     return (v0 & 0x01) | (v1 & 0x01) << 1 | (v2 & 0x01) << 2 | (v3 & 0x01) << 3;
 }
 
@@ -912,6 +939,9 @@ static inline void geo_lspc_aa(void) {
 }
 
 static void geo_lspc_scanline(void) {
+    if (lspc.skip_rendering)
+        return;
+
     if (lspc.scanline >= LSPC_LINE_BORDER_TOP &&
         lspc.scanline < LSPC_LINE_BORDER_BOTTOM) {
         geo_lspc_bdsprline();
@@ -948,8 +978,17 @@ void geo_lspc_run(unsigned cycs) {
         if ((start <= 29) && (end > 29)) {
             if (lspc.scanline == LSPC_LINE_BORDER_TOP)
                 geo_lspc_aa();
-            else if (lspc.scanline == LSPC_LINE_BORDER_BOTTOM + 1)
-                geo_m68k_interrupt(IRQ_VBLANK);
+            else if (lspc.scanline == LSPC_LINE_BORDER_BOTTOM + 1) {
+                // In CD mode, VBL is masked by irqMask2 bits 4+5
+                if (geo_get_system() < 0x03) {
+                    geo_m68k_interrupt(irq_vbl_level);
+                } else if (geo_cd_vbl_enabled()) {
+                    geo_m68k_interrupt(irq_vbl_level);
+                } else {
+                    // Latch VBL as pending — will fire when irq_mask2 enables it
+                    geo_cd_set_vbl_pending();
+                }
+            }
         }
 
         if ((start <= 573) && (end > 573)) {

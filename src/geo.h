@@ -48,6 +48,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define SYSTEM_AES  0x00 // Console
 #define SYSTEM_MVS  0x01 // Arcade
 #define SYSTEM_UNI  0x02 // Universe BIOS
+#define SYSTEM_CD   0x03 // Neo Geo CD
+#define SYSTEM_CDZ  0x04 // Neo Geo CDZ
 
 #define REGION_US   0x00 // USA
 #define REGION_JP   0x01 // Japan
@@ -166,6 +168,7 @@ int geo_bios_load_file(const char*);
 void geo_bios_unload(void);
 
 void geo_watchdog_reset(void);
+void geo_watchdog_enable(int);
 
 int geo_savedata_load(unsigned, const char*);
 int geo_savedata_save(unsigned, const char*);
@@ -201,6 +204,8 @@ size_t geo_state_size(void);
 const void* geo_mem_ptr(unsigned, size_t*);
 
 extern void (*geo_log)(int, const char *, ...);
+extern uint8_t irq_vbl_level;
+extern uint8_t irq_timer_level;
 
 extern unsigned (*geo_input_cb[NUMINPUTS_NG])(unsigned);
 extern unsigned (*geo_input_sys_cb[NUMINPUTS_SYS])(void);

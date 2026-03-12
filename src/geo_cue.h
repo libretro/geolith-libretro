@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2022-2024 Rupert Carmichael
+Copyright (c) 2026 Romain Tisserand
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -28,19 +28,19 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-#ifndef GEO_Z80_H
-#define GEO_Z80_H
+#ifndef GEO_CUE_H
+#define GEO_CUE_H
 
-int geo_z80_run(unsigned);
-void geo_z80_nmi(void);
-void geo_z80_assert_irq(unsigned);
-void geo_z80_clear_irq(void);
-void geo_z80_init(void);
-void geo_z80_reset(void);
-void geo_z80_set_mrom(unsigned);
-void geo_z80_set_cd_mode(void);
-void geo_z80_state_load(uint8_t*);
-void geo_z80_state_save(uint8_t*);
-const void* geo_z80_ram_ptr(void);
+int geo_cue_open(const char *path);
+void geo_cue_close(void);
+
+int geo_cue_read_sector(uint32_t disc_lba, uint8_t *buf);
+int geo_cue_read_audio(uint32_t disc_lba, int16_t *buf);
+
+unsigned geo_cue_num_tracks(void);
+int geo_cue_track_is_audio(unsigned track);
+uint32_t geo_cue_track_start(unsigned track);
+uint32_t geo_cue_track_frames(unsigned track);
+uint32_t geo_cue_leadout(void);
 
 #endif
