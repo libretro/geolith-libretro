@@ -34,6 +34,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <speex/speex_resampler.h>
 
 #include "geo.h"
+#include "geo_cd.h"
 #include "geo_mixer.h"
 #include "geo_ymfm.h"
 
@@ -44,6 +45,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
      samplerate * (60 / framerate) = ~56319.437
 */
 #define SAMPLERATE_YM2610 56319
+#define SAMPLERATE_CDDA 44100
 
 void (*geo_mixer_output)(size_t);
 
@@ -52,10 +54,53 @@ static size_t samplerate = 48000; // Default sample rate is 48000Hz
 static double framerate = FRAMERATE_AES; // Default to AES
 
 static SpeexResamplerState *resampler = NULL;
+static SpeexResamplerState *cdda_resampler = NULL;
+static int16_t cdda_resamp_buf[4096]; // Resampled CDDA output buffer
 static int err;
 
 // Callback to notify the fronted that N samples are ready
 static void (*geo_mixer_cb)(size_t);
+
+// Mix CDDA into the output buffer if CD mode and CDDA is playing
+static void geo_mixer_mix_cdda(size_t outsamps) {
+    int sys = geo_get_system();
+    if ((sys != SYSTEM_CD && sys != SYSTEM_CDZ) || !geo_cd_is_playing_cdda())
+        return;
+
+    int16_t *cdda_buf = geo_cd_get_cdda_buffer();
+    size_t cdda_in = geo_cd_get_cdda_samples();
+    if (!cdda_buf || !cdda_in)
+        return;
+
+    // Lazy-init: system type isn't known at retro_init() time.
+    // In raw mode (libretro default), output is at YM2610 rate.
+    // In resamp mode, output is at the configured samplerate.
+    if (!cdda_resampler) {
+        unsigned target = resampler ? samplerate : SAMPLERATE_YM2610;
+        cdda_resampler = speex_resampler_init(2, SAMPLERATE_CDDA, target, 3, &err);
+        if (!cdda_resampler)
+            return;
+    }
+
+    spx_uint32_t in_len = cdda_in;
+    spx_uint32_t out_len = outsamps;
+
+    err = speex_resampler_process_interleaved_int(cdda_resampler,
+        (spx_int16_t*)cdda_buf, &in_len,
+        (spx_int16_t*)cdda_resamp_buf, &out_len);
+
+    // Keep unconsumed input samples for next frame
+    geo_cd_cdda_consume(in_len);
+
+    // Mix CDDA into the output buffer (stereo interleaved)
+    size_t total = out_len << 1;
+    for (size_t i = 0; i < total; ++i) {
+        int32_t mixed = (int32_t)abuf[i] + (int32_t)cdda_resamp_buf[i];
+        if (mixed > 32767) mixed = 32767;
+        if (mixed < -32768) mixed = -32768;
+        abuf[i] = (int16_t)mixed;
+    }
+}
 
 // Resample audio and pass the samples back to the frontend
 static void geo_mixer_resamp(size_t in_ym) {
@@ -66,16 +111,21 @@ static void geo_mixer_resamp(size_t in_ym) {
     err = speex_resampler_process_interleaved_int(resampler,
         (spx_int16_t*)ybuf, &insamps, (spx_int16_t*)abuf, &outsamps);
 
+    geo_mixer_mix_cdda(outsamps);
+
     geo_mixer_cb(outsamps << 1);
 }
 
 // Pass raw samples (no resampling) back to the frontend
 static void geo_mixer_raw(size_t in_ym) {
     int16_t *ybuf = geo_ymfm_get_buffer();
-    in_ym <<= 1; // Stereo
+    size_t frames = in_ym; // Stereo frames before doubling
 
+    in_ym <<= 1; // Stereo
     for (size_t i = 0; i < in_ym; ++i)
         abuf[i] = ybuf[i];
+
+    geo_mixer_mix_cdda(frames);
 
     geo_mixer_cb(in_ym);
 }
@@ -106,12 +156,22 @@ void geo_mixer_deinit(void) {
         speex_resampler_destroy(resampler);
         resampler = NULL;
     }
+    if (cdda_resampler) {
+        speex_resampler_destroy(cdda_resampler);
+        cdda_resampler = NULL;
+    }
 }
 
 // Bring up the Speex resampler
 void geo_mixer_init(void) {
-    if (geo_get_system() != SYSTEM_AES)
+    int sys = geo_get_system();
+    if (sys != SYSTEM_AES)
         framerate = FRAMERATE_MVS;
     resampler = speex_resampler_init(2, SAMPLERATE_YM2610, samplerate, 3, &err);
+
+    // Initialize CDDA resampler for CD mode
+    if (sys == SYSTEM_CD || sys == SYSTEM_CDZ)
+        cdda_resampler = speex_resampler_init(2, SAMPLERATE_CDDA, samplerate, 3, &err);
+
     geo_mixer_output = &geo_mixer_resamp;
 }
