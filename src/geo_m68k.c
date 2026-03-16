@@ -30,7 +30,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
 
 #include "m68k/m68k.h"
 #include "m68k/m68kcpu.h"
@@ -1251,9 +1250,7 @@ static void geo_m68k_cart_write_16(unsigned address, unsigned value) {
     }
 }
 
-// =========================================================================
-// Musashi global memory access functions - dispatch through function pointers
-// =========================================================================
+// Musashi global memory access functions
 unsigned m68k_read_memory_8(unsigned address) {
     return m68k_read_8_fn(address);
 }
@@ -1340,12 +1337,12 @@ void geo_m68k_interrupt(unsigned level) {
 
 // Acknowledge interrupts
 int geo_m68k_int_ack(int level) {
-    int sys = geo_get_system();
-    if (sys == SYSTEM_CD || sys == SYSTEM_CDZ) {
-        // CD mode uses custom vectoring:
-        // Level 1 → VBL vector at offset 0x68 (vector 26)
-        // Level 2 → CD vector at offset 0x54 or 0x58
-        // Level 3 → Timer/HBL vector at offset 0x64 (vector 25)
+    if (ngsys.cdmode) {
+        /* CD Mode Custom Vectoring
+           Level 1: VBL vector at offset 0x68 (vector 26)
+           Level 2: CD vector at offset 0x54 or 0x58
+           Level 3: Timer/HBL vector at offset 0x64 (vector 25)
+        */
         switch (level) {
             case 1:
                 m68k_set_virq(1, 0);
@@ -1358,7 +1355,7 @@ int geo_m68k_int_ack(int level) {
                     vec = 0x54;
                 else
                     vec = 0x58;
-                
+
                 m68k_set_virq(2, 0);
                 return vec / 4;
             }

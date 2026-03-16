@@ -63,10 +63,10 @@ static uint8_t transfer_area = 0;      // 0=SPR, 1=PCM, 4=Z80, 5=FIX
 static uint8_t spr_bank = 0;           // SPR bank (0-3, 1MB each)
 static uint8_t pcm_bank = 0;           // PCM bank (0-1, 512K each)
 
-// Layer enable flags
-static uint8_t spr_disable = 0;
-static uint8_t fix_disable = 0;
-static uint8_t video_disable = 0;
+// Video control registers
+static uint8_t reg_disblspr = 0;
+static uint8_t reg_disblfix = 0;
+static uint8_t reg_envideo = 0;
 
 // Bus request states
 static uint8_t busreq_spr = 0;
@@ -1116,7 +1116,8 @@ static uint16_t cd_reg_read_16(uint32_t addr) {
             if (!cdda_playing || cdda_samples == 0)
                 return 0;
             // Map current master cycle position to a sample index in the buffer
-            size_t idx = (size_t)cd_frame_mcycs * cdda_samples / MCYC_PER_FRAME_CD;
+            size_t idx =
+                (size_t)cd_frame_mcycs * cdda_samples / MCYC_PER_FRAME_CD;
             if (idx >= cdda_samples)
                 idx = cdda_samples - 1;
             int ch = (addr == 0x018a) ? 1 : 0;
@@ -1179,13 +1180,16 @@ static void cd_reg_write_8(uint32_t addr, uint8_t val) {
             return;
 
         case 0x0111: // SPR enable/disable
-            spr_disable = (val != 0);
+            reg_disblspr = val;
+            geo_lspc_disblspr_wr(reg_disblspr);
             return;
         case 0x0115: // FIX enable/disable
-            fix_disable = (val != 0);
+            reg_disblfix = val;
+            geo_lspc_disblfix_wr(reg_disblfix);
             return;
         case 0x0119: // Video enable/disable
-            video_disable = (val != 0);
+            reg_envideo = val;
+            geo_lspc_envideo_wr(reg_envideo);
             return;
 
         case 0x0121: busreq_spr = 1; return;
@@ -1572,9 +1576,7 @@ void geo_cd_m68k_write_8(unsigned address, unsigned value) {
             case 0x3a0005: return; // REG_CRDUNLOCK1
             case 0x3a0007: return; // REG_CRDLOCK2
             case 0x3a0009: return; // REG_CRDREGSEL
-            case 0x3a000b: // REG_BRDFIX
-                geo_lspc_set_fix(LSPC_FIX_BOARD);
-                return;
+            case 0x3a000b: return; // REG_BRDFIX
             case 0x3a000d: reg_sramlock = 1; return;
             case 0x3a000f: geo_lspc_palram_bank(1); return;
             case 0x3a0011: geo_lspc_shadow_wr(1); return;
@@ -1583,9 +1585,7 @@ void geo_cd_m68k_write_8(unsigned address, unsigned value) {
             case 0x3a0015: return; // REG_CRDLOCK1
             case 0x3a0017: return; // REG_CRDUNLOCK2
             case 0x3a0019: return; // REG_CRDNORMAL
-            case 0x3a001b: // REG_CRTFIX
-                geo_lspc_set_fix(LSPC_FIX_CART);
-                return;
+            case 0x3a001b: return; // REG_CRTFIX
             case 0x3a001d: reg_sramlock = 0; return;
             case 0x3a001f: geo_lspc_palram_bank(0); return;
 
@@ -1915,7 +1915,8 @@ void geo_cd_init(void) {
     // Detect BIOS family and apply patches
     if (romdata->b && romdata->bsz >= SIZE_512K) {
         bios_family = geo_cd_detect_bios(romdata->b, romdata->bsz);
-        geo_log(GEO_LOG_INF, "CD BIOS family: %s (SP=%02x%02x%02x%02x vec6C=%02x%02x%02x%02x)\n",
+        geo_log(GEO_LOG_INF,
+            "CD BIOS family: %s (SP=%02x%02x%02x%02x vec6C=%02x%02x%02x%02x)\n",
             bios_family == CD_BIOS_CDZ ? "CDZ" :
             bios_family == CD_BIOS_TOP ? "Top Loader" :
             bios_family == CD_BIOS_FRONT ? "Front Loader" : "Unknown",
@@ -1942,7 +1943,6 @@ void geo_cd_init(void) {
     memset(&dma, 0, sizeof(dma));
 
     // Redirect ROM data pointers to CD RAM for LSPC and YM2610
-    geo_lspc_set_cd_mode(1);
     romdata->c = spr_dram;
     romdata->csz = SIZE_4M;
     romdata->s = fix_ram;
@@ -1956,8 +1956,9 @@ void geo_cd_init(void) {
     romdata->m = z80_ram_cd;
     romdata->msz = SIZE_64K;
 
-    // Recalculate LSPC masks for the new ROM sizes
+    // Recalculate LSPC masks for the new ROM sizes, assign FIX data pointer
     geo_lspc_postload();
+    geo_lspc_set_fix(LSPC_FIX_CD);
 }
 
 void geo_cd_deinit(void) {
@@ -1969,9 +1970,9 @@ void geo_cd_reset(void) {
     transfer_area = 0;
     spr_bank = 0;
     pcm_bank = 0;
-    spr_disable = 0;
-    fix_disable = 0;
-    video_disable = 0;
+    reg_disblspr = 0;
+    reg_disblfix = 0;
+    reg_envideo = 0;
     busreq_spr = 0;
     busreq_pcm = 0;
     busreq_z80 = 0;
@@ -2042,9 +2043,9 @@ void geo_cd_state_save(uint8_t *st) {
     geo_serial_push8(st, transfer_area);
     geo_serial_push8(st, spr_bank);
     geo_serial_push8(st, pcm_bank);
-    geo_serial_push8(st, spr_disable);
-    geo_serial_push8(st, fix_disable);
-    geo_serial_push8(st, video_disable);
+    geo_serial_push8(st, reg_disblspr);
+    geo_serial_push8(st, reg_disblfix);
+    geo_serial_push8(st, reg_envideo);
     geo_serial_push8(st, z80_enabled);
     geo_serial_push8(st, reg_sramlock);
     geo_serial_push8(st, cd_irq_mask);
@@ -2089,9 +2090,9 @@ void geo_cd_state_load(uint8_t *st) {
     transfer_area = geo_serial_pop8(st);
     spr_bank = geo_serial_pop8(st);
     pcm_bank = geo_serial_pop8(st);
-    spr_disable = geo_serial_pop8(st);
-    fix_disable = geo_serial_pop8(st);
-    video_disable = geo_serial_pop8(st);
+    reg_disblspr = geo_serial_pop8(st);
+    reg_disblfix = geo_serial_pop8(st);
+    reg_envideo = geo_serial_pop8(st);
     z80_enabled = geo_serial_pop8(st);
     reg_sramlock = geo_serial_pop8(st);
     cd_irq_mask = geo_serial_pop8(st);
@@ -2122,4 +2123,9 @@ void geo_cd_state_load(uint8_t *st) {
     cached_track_end = 0;
     if (geo_disc_num_tracks() > 0)
         find_track_for_lba(cd.play_lba);
+
+    // Restore LSPC rendering state
+    geo_lspc_disblspr_wr(reg_disblspr);
+    geo_lspc_disblfix_wr(reg_disblfix);
+    geo_lspc_envideo_wr(reg_envideo);
 }

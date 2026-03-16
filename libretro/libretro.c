@@ -1080,7 +1080,7 @@ void retro_run(void) {
         memset(vbuf, 0, LSPC_WIDTH * LSPC_SCANLINES * sizeof(uint32_t));
         video_cb(vbuf + (LSPC_WIDTH * (video_crop_t + 16)) + video_crop_l,
             video_width_visible, video_height_visible, LSPC_WIDTH << 2);
-        geo_lspc_set_skip_rendering(1);
+        geo_lspc_set_skip_render(1);
         int skip = 0, idle = 0;
         while (idle < 20) {
             geo_cd_clear_sector_decoded();
@@ -1091,7 +1091,7 @@ void retro_run(void) {
             else
                 ++idle;
         }
-        geo_lspc_set_skip_rendering(0);
+        geo_lspc_set_skip_render(0);
         geo_cd_clear_sector_decoded();
         log_cb(RETRO_LOG_INFO, "[CD SKIP] skipped %d frames\n", skip);
     }
@@ -1201,12 +1201,7 @@ bool retro_load_game(const struct retro_game_info *info) {
             retro_unload_game();
             return false;
         }
-
-        // Byteswap the BIOS (same as cartridge postload does)
-        romdata_t *rd = geo_romdata_ptr();
-        uint16_t *bios16 = (uint16_t*)rd->b;
-        for (size_t i = 0; i < rd->bsz >> 1; ++i)
-            bios16[i] = (bios16[i] << 8) | (bios16[i] >> 8);
+        geo_m68k_postload();
     }
     else {
         // Cartridge mode: load NEO file

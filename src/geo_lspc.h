@@ -51,6 +51,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define LSPC_FIXTILES_V     32
 #define LSPC_FIX_BOARD      0
 #define LSPC_FIX_CART       1
+#define LSPC_FIX_CD         2
 
 #define FIX_BANKSW_NONE 0
 #define FIX_BANKSW_LINE 1
@@ -84,12 +85,6 @@ typedef struct _lspc_t {
 
     uint32_t scanline;
     uint32_t cyc;
-
-    // CD mode: sprite tile data uses non-interleaved byte ordering
-    uint8_t cd_mode;
-
-    // Skip rendering during CD loading fast-forward
-    uint8_t skip_rendering;
 } lspc_t;
 
 void geo_lspc_set_buffer(uint32_t*);
@@ -97,8 +92,12 @@ void geo_lspc_set_fix_banksw(unsigned);
 void geo_lspc_set_fix(unsigned);
 void geo_lspc_set_sprlimit(unsigned);
 void geo_lspc_set_palette(unsigned);
-void geo_lspc_set_cd_mode(int);
-void geo_lspc_set_skip_rendering(int);
+
+void geo_lspc_set_skip_render(unsigned);
+
+void geo_lspc_disblspr_wr(unsigned);
+void geo_lspc_disblfix_wr(unsigned);
+void geo_lspc_envideo_wr(unsigned);
 
 void geo_lspc_postload(void);
 

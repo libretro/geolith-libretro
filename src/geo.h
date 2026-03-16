@@ -44,12 +44,17 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define SIZE_32K    0x008000
 #define SIZE_64K    0x010000
 #define SIZE_128K   0x020000
+#define SIZE_512K   0x080000
+#define SIZE_1M     0x100000
+#define SIZE_2M     0x200000
+#define SIZE_4M     0x400000
 
 #define SYSTEM_AES  0x00 // Console
 #define SYSTEM_MVS  0x01 // Arcade
 #define SYSTEM_UNI  0x02 // Universe BIOS
-#define SYSTEM_CD   0x03 // Neo Geo CD
-#define SYSTEM_CDZ  0x04 // Neo Geo CDZ
+#define SYSTEM_CD   0x03 // CD
+#define SYSTEM_CDZ  0x04 // CDZ
+#define SYSTEM_CDU  0x05 // CD Universe BIOS
 
 #define REGION_US   0x00 // USA
 #define REGION_JP   0x01 // Japan
@@ -117,6 +122,13 @@ typedef struct _ngsys_t {
 
     // Cartridge RAM (Battery Backed SRAM) Presence
     uint8_t sram_present;
+
+    // System type/region
+    uint8_t sys;
+    uint8_t region;
+
+    // Convenience variables, not part of the state
+    unsigned cdmode;
 } ngsys_t;
 
 typedef struct _romdata_t {
@@ -168,7 +180,7 @@ int geo_bios_load_file(const char*);
 void geo_bios_unload(void);
 
 void geo_watchdog_reset(void);
-void geo_watchdog_enable(int);
+void geo_watchdog_enable(unsigned);
 
 int geo_savedata_load(unsigned, const char*);
 int geo_savedata_save(unsigned, const char*);
@@ -204,12 +216,12 @@ size_t geo_state_size(void);
 const void* geo_mem_ptr(unsigned, size_t*);
 
 extern void (*geo_log)(int, const char *, ...);
-extern uint8_t irq_vbl_level;
-extern uint8_t irq_timer_level;
 
 extern unsigned (*geo_input_cb[NUMINPUTS_NG])(unsigned);
 extern unsigned (*geo_input_sys_cb[NUMINPUTS_SYS])(void);
 
 extern ngsys_t ngsys;
+extern unsigned irq_vbl_level;
+extern unsigned irq_timer_level;
 
 #endif

@@ -31,14 +31,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef GEO_CD_H
 #define GEO_CD_H
 
-#define SIZE_2M     0x200000
-#define SIZE_4M     0x400000
-#define SIZE_512K   0x080000
-#define SIZE_1M     0x100000
-
-#define SYSTEM_CD   0x03
-#define SYSTEM_CDZ  0x04
-
 // CD IRQ level (M68K interrupt level 2)
 #define IRQ_CD      0x02
 

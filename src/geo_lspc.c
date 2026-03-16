@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2022-2025 Rupert Carmichael
+Copyright (c) 2022-2026 Rupert Carmichael
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -30,7 +30,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include <stddef.h>
 #include <stdint.h>
-#include <stdio.h>
 
 #include "geo.h"
 #include "geo_cd.h"
@@ -40,7 +39,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #define M68K_CYC_PER_LINE 768
 
-static void geo_lspc_fixline_default(void);
 static void (*geo_lspc_fixline)(void);
 
 static lspc_t lspc;
@@ -48,8 +46,11 @@ static romdata_t *romdata = NULL;
 
 static uint32_t *vbuf = NULL;
 
+// Hacks
 static unsigned sprlimit = 96; // Sprites-per-line limit
+static unsigned skip_render; // Skip rendering during CD loading fast-forward
 
+// Line buffering
 static unsigned linebuf[2][LSPC_WIDTH]; // Line buffers for sprite pixels
 static unsigned lbactive = 0; // Active line buffer
 
@@ -66,6 +67,10 @@ static uint32_t *palette = palette_normal;
 // Palette lookup tables
 static unsigned lut_normal[64];
 static unsigned lut_shadow[64];
+
+static unsigned reg_disblspr = 0;
+static unsigned reg_disblfix = 0;
+static unsigned reg_envideo = 0;
 
 // Horizontal Shrink LUT -- from neogeodev
 static unsigned lut_hshrink[0x10][0x10] = {
@@ -327,12 +332,23 @@ void geo_lspc_set_palette(unsigned p) {
         geo_lspc_palconv(i, lspc.palram[i]);
 }
 
-void geo_lspc_set_cd_mode(int enabled) {
-    lspc.cd_mode = enabled ? 1 : 0;
+void geo_lspc_set_skip_render(unsigned s) {
+    skip_render = s;
 }
 
-void geo_lspc_set_skip_rendering(int skip) {
-    lspc.skip_rendering = skip ? 1 : 0;
+// Handle behaviour related to the Neo Geo CD REG_DISBLSPR register
+void geo_lspc_disblspr_wr(unsigned e) {
+    reg_disblspr = e; // Writing non-zero disables sprite layer rendering
+}
+
+// Handle behaviour related to the Neo Geo CD REG_DISBLFIX register
+void geo_lspc_disblfix_wr(unsigned e) {
+    reg_disblfix = e; // Writing non-zero disables FIX layer rendering
+}
+
+// Handle behaviour related to the Neo Geo CD REG_ENVIDEO register
+void geo_lspc_envideo_wr(unsigned e) {
+    reg_envideo = e; // 0 = Disable, 1 = Enable
 }
 
 // Perform post-load operations for C ROM
@@ -406,7 +422,7 @@ void geo_lspc_palram_wr08(uint32_t addr, uint8_t data) {
         lspc.palram[(addr & 0x0fff) + (lspc.palbank * SIZE_4K)] |= (data << 8);
     }
 
-    uint16_t idx = (addr & 0x0fff) + (lspc.palbank * SIZE_4K);
+    unsigned idx = (addr & 0x0fff) + (lspc.palbank * SIZE_4K);
     geo_lspc_palconv(idx, lspc.palram[idx]);
 }
 
@@ -497,10 +513,6 @@ void geo_lspc_init(void) {
     geo_lspc_shadow_wr(0);
 
     romdata = geo_romdata_ptr();
-
-    // Default fix line renderer and fix data pointer
-    geo_lspc_fixline = &geo_lspc_fixline_default;
-    fixdata = romdata->s ? romdata->s : romdata->sfix;
 }
 
 // No Fix Layer Banking (Default)
@@ -666,13 +678,22 @@ static void geo_lspc_fixline_tile(void) {
 
 // Set the active Fix ROM
 void geo_lspc_set_fix(unsigned f) {
-    if (f) {
-        fixdata = romdata->s;
-        geo_lspc_set_fix_banksw(fixbanksw);
-    }
-    else {
-        fixdata = romdata->sfix;
-        geo_lspc_fixline = &geo_lspc_fixline_default;
+    switch (f) {
+        default: case LSPC_FIX_BOARD: {
+            fixdata = romdata->sfix;
+            geo_lspc_fixline = &geo_lspc_fixline_default;
+            break;
+        }
+        case LSPC_FIX_CART: {
+            fixdata = romdata->s;
+            geo_lspc_set_fix_banksw(fixbanksw);
+            break;
+        }
+        case LSPC_FIX_CD: { // CD systems always use .FIX files from the CD
+            fixdata = romdata->s;
+            geo_lspc_fixline = &geo_lspc_fixline_default;
+            break;
+        }
     }
 }
 
@@ -724,14 +745,13 @@ static inline unsigned geo_lspc_tpix(unsigned tbase, unsigned x, unsigned y) {
     */
     unsigned base = tbase + (y << 2);
     unsigned v0, v1, v2, v3;
-    if (lspc.cd_mode) {
-        // CD SPR DRAM: non-interleaved byte order [1, 0, 3, 2]
+    if (ngsys.cdmode) { // CD SPR DRAM: Non-interleaved byte order [1, 0, 3, 2]
         v0 = (romdata->c[base + 1]) >> (x);
         v1 = (romdata->c[base + 0]) >> (x);
         v2 = (romdata->c[base + 3]) >> (x);
         v3 = (romdata->c[base + 2]) >> (x);
-    } else {
-        // Cart C ROM: interleaved odd/even byte order [0, 2, 1, 3]
+    }
+    else { // Cart C ROM: Interleaved odd/even byte order [0, 2, 1, 3]
         v0 = (romdata->c[base + 0]) >> (x);
         v1 = (romdata->c[base + 2]) >> (x);
         v2 = (romdata->c[base + 1]) >> (x);
@@ -939,18 +959,21 @@ static inline void geo_lspc_aa(void) {
 }
 
 static void geo_lspc_scanline(void) {
-    if (lspc.skip_rendering)
+    if (ngsys.cdmode && (!reg_envideo || skip_render))
         return;
 
     if (lspc.scanline >= LSPC_LINE_BORDER_TOP &&
         lspc.scanline < LSPC_LINE_BORDER_BOTTOM) {
         geo_lspc_bdsprline();
-        geo_lspc_sprcalc();
-        geo_lspc_fixline();
+        if (!reg_disblspr)
+            geo_lspc_sprcalc();
+        if (!reg_disblfix)
+            geo_lspc_fixline();
     }
     else if (lspc.scanline == LSPC_LINE_BUFSTART ||
         lspc.scanline == LSPC_LINE_BUFSTART + 1) {
-        geo_lspc_sprcalc();
+        if (!reg_disblspr)
+            geo_lspc_sprcalc();
     }
 }
 
@@ -979,15 +1002,10 @@ void geo_lspc_run(unsigned cycs) {
             if (lspc.scanline == LSPC_LINE_BORDER_TOP)
                 geo_lspc_aa();
             else if (lspc.scanline == LSPC_LINE_BORDER_BOTTOM + 1) {
-                // In CD mode, VBL is masked by irqMask2 bits 4+5
-                if (geo_get_system() < 0x03) {
-                    geo_m68k_interrupt(irq_vbl_level);
-                } else if (geo_cd_vbl_enabled()) {
-                    geo_m68k_interrupt(irq_vbl_level);
-                } else {
-                    // Latch VBL as pending — will fire when irq_mask2 enables it
+                if (ngsys.cdmode && !geo_cd_vbl_enabled()) // Latch VBL
                     geo_cd_set_vbl_pending();
-                }
+                else
+                    geo_m68k_interrupt(irq_vbl_level);
             }
         }
 

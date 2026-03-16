@@ -67,10 +67,7 @@ static romdata_t romdata;
 static uint8_t state[8388608]; // Maximum size (8MB, accommodates CD mode)
 static size_t state_sz = 0;
 
-// System being emulated
-static uint8_t sys = 0;
-static uint8_t region = 0;
-
+// Cycle counters
 static uint32_t mcycs = 0;
 static uint32_t zcycs = 0;
 static uint32_t ymcycs = 0;
@@ -82,14 +79,13 @@ static unsigned icycs = 0;
 unsigned oc = 0;
 unsigned irq2_fragmask = 0x01;
 
-// IRQ levels: swapped in CD mode vs cart mode
-// Cart: VBL=1, Timer=2. CD: VBL=2, Timer=1.
-uint8_t irq_vbl_level = IRQ_VBLANK;
-uint8_t irq_timer_level = IRQ_TIMER;
+// IRQ Levels
+unsigned irq_vbl_level = IRQ_VBLANK;
+unsigned irq_timer_level = IRQ_TIMER;
 
 // Watchdog Frames
 static unsigned watchdog_frames = 8;
-static int watchdog_enabled = 1; // CD mode starts disabled, controlled via FF016F
+static unsigned watchdog_enabled = 1; // TODO: Add to state for CD systems?
 
 // Set the log callback
 void geo_log_set_callback(void (*cb)(int, const char *, ...)) {
@@ -108,22 +104,23 @@ void geo_input_sys_set_callback(unsigned port, unsigned (*cb)(void)) {
 
 // Set the region of the system to be emulated
 void geo_set_region(int r) {
-    region = r;
+    ngsys.region = r;
 }
 
 // Get the region of the system currently being emulated
 int geo_get_region(void) {
-    return region;
+    return ngsys.region;
 }
 
 // Set the system to be emulated
 void geo_set_system(int s) {
-    sys = s;
+    ngsys.sys = s;
+    ngsys.cdmode = s >= SYSTEM_CD;
 }
 
 // Get the system currently being emulated
 int geo_get_system(void) {
-    return sys;
+    return ngsys.sys;
 }
 
 // Set the 68K Clock Divider on or off
@@ -196,10 +193,8 @@ static int geo_bios_load(mz_zip_archive *zip_archive) {
             biosrom = "uni-bios_4_0.rom";
             break;
         }
-        case SYSTEM_CD:
-        case SYSTEM_CDZ: {
+        case SYSTEM_CD: case SYSTEM_CDZ: {
             biosrom = "neocd.bin";
-            break;
         }
     }
 
@@ -225,9 +220,7 @@ static int geo_bios_load(mz_zip_archive *zip_archive) {
         return 0;
     }
 
-    if (geo_get_system() != SYSTEM_AES &&
-        geo_get_system() != SYSTEM_CD &&
-        geo_get_system() != SYSTEM_CDZ) {
+    if (ngsys.sys == SYSTEM_MVS || ngsys.sys == SYSTEM_UNI) {
         // SFIX
         romdata.sfix = mz_zip_reader_extract_file_to_heap(zip_archive,
             "sfix.sfix", &(romdata.sfixsz), 0);
@@ -383,25 +376,12 @@ void geo_reset(int hard) {
     ngsys.sound_reply = 0;
     ngsys.watchdog = 0;
 
-    // CD mode uses different IRQ levels (matching NeoCD):
-    // Level 1 = VBL, Level 2 = CD, Level 3 = Timer/HBL
-    // Int_ack returns custom vectors (not autovectors)
-    if (sys == SYSTEM_CD || sys == SYSTEM_CDZ) {
-        irq_vbl_level = IRQ_VBLANK;   // VBL on level 1
-        irq_timer_level = IRQ_RESET;  // Timer on level 3
-        watchdog_enabled = 0; // CD watchdog starts disabled, enabled via FF016F
-    } else {
-        irq_vbl_level = IRQ_VBLANK;
-        irq_timer_level = IRQ_TIMER;
-        watchdog_enabled = 1;
-    }
-
     geo_m68k_reset();
     geo_z80_reset();
     geo_ymfm_reset(); // Reset the YM2610 to make sure everything is defaulted
     geo_lspc_init();
 
-    if (sys == SYSTEM_CD || sys == SYSTEM_CDZ)
+    if (ngsys.cdmode)
         geo_cd_reset();
 
     if (hard)
@@ -422,6 +402,9 @@ void geo_init(void) {
     ngsys.irq2_dec = 0;
 
     watchdog_frames = 8;
+    watchdog_enabled = 1;
+    irq_vbl_level = IRQ_VBLANK;
+    irq_timer_level = IRQ_TIMER;
 
     memset(ngsys.nvram, 0x00, SIZE_64K);
     memset(ngsys.cartram, 0x00, SIZE_8K);
@@ -430,8 +413,16 @@ void geo_init(void) {
     // Pre-format the memory card in case there is no existing memory card data
     geo_memcard_format(ngsys.memcard);
 
-    // Initialize CD subsystem if in CD mode
-    if (sys == SYSTEM_CD || sys == SYSTEM_CDZ) {
+    // CD System Initialization
+    if (ngsys.cdmode) {
+        /* CD mode uses different IRQ levels:
+           Level 1 = VBLANK, Level 2 = CD, Level 3 = Timer/HBLANK
+           Int_ack returns custom vectors (not autovectors)
+        */
+        irq_vbl_level = IRQ_VBLANK;
+        irq_timer_level = IRQ_RESET;
+        watchdog_enabled = 0; // CD watchdog starts disabled
+
         geo_cd_init();
         geo_m68k_set_memmap_cd();
         geo_z80_set_cd_mode();
@@ -444,7 +435,7 @@ int geo_state_load_raw(const void *sstate) {
     uint8_t stregion = geo_serial_pop8(st);
     uint8_t stsys = geo_serial_pop8(st);
 
-    if ((region != stregion) || (sys != stsys)) {
+    if ((ngsys.region != stregion) || (ngsys.sys != stsys)) {
         geo_log(GEO_LOG_WRN, "State load operation ignored: state is "
         "for a different system type or region\n");
         return 0;
@@ -474,7 +465,7 @@ int geo_state_load_raw(const void *sstate) {
     geo_ymfm_state_load(st);
     geo_z80_state_load(st);
 
-    if (sys == SYSTEM_CD || sys == SYSTEM_CDZ)
+    if (ngsys.cdmode)
         geo_cd_state_load(st);
 
     return 1;
@@ -523,8 +514,8 @@ int geo_state_load(const char *filename) {
 
 const void* geo_state_save_raw(void) {
     geo_serial_begin();
-    geo_serial_push8(state, region);
-    geo_serial_push8(state, sys);
+    geo_serial_push8(state, ngsys.region);
+    geo_serial_push8(state, ngsys.sys);
     geo_serial_push32(state, mcycs);
     geo_serial_push32(state, zcycs);
     geo_serial_push32(state, ymcycs);
@@ -549,7 +540,7 @@ const void* geo_state_save_raw(void) {
     geo_ymfm_state_save(state);
     geo_z80_state_save(state);
 
-    if (sys == SYSTEM_CD || sys == SYSTEM_CDZ)
+    if (ngsys.cdmode)
         geo_cd_state_save(state);
 
     return (const void*)state;
@@ -588,7 +579,7 @@ size_t geo_state_size(void) {
 const void* geo_mem_ptr(unsigned type, size_t *sz) {
     switch (type) {
         case GEO_MEMTYPE_MAINRAM: {
-            if (sys == SYSTEM_CD || sys == SYSTEM_CDZ) {
+            if (ngsys.cdmode) {
                 if (sz) *sz = SIZE_2M;
                 return geo_m68k_ram_ptr(); // Returns pram in CD mode
             }
@@ -644,8 +635,8 @@ static inline void geo_watchdog_increment(void) {
     */
     if (!watchdog_enabled)
         return;
+
     if (++ngsys.watchdog >= watchdog_frames) {
-        fprintf(stderr, "Watchdog reset!\n");
         geo_log(GEO_LOG_WRN, "Watchdog reset\n");
         geo_reset(0);
     }
@@ -657,21 +648,19 @@ void geo_watchdog_reset(void) {
 }
 
 // Enable or disable the watchdog (used by CD register FF016F)
-void geo_watchdog_enable(int enable) {
+void geo_watchdog_enable(unsigned enable) {
     watchdog_enabled = enable;
     if (enable)
         ngsys.watchdog = 0;
 }
 
 void geo_exec(void) {
-    uint8_t cd_mode = (sys == SYSTEM_CD || sys == SYSTEM_CDZ);
-
     while (mcycs < MCYC_PER_FRAME) {
         icycs = geo_m68k_run(1);
         mcycs += (icycs * DIV_M68K) >> oc;
 
         // If this is an arcade system, update the RTC
-        if (sys == SYSTEM_MVS || sys == SYSTEM_UNI)
+        if (ngsys.sys == SYSTEM_MVS || ngsys.sys == SYSTEM_UNI)
             geo_rtc_sync(icycs >> oc);
 
         // Handle IRQ2 counter
@@ -700,7 +689,7 @@ void geo_exec(void) {
         geo_lspc_run(icycs >> oc);
 
         // Advance CD timing
-        if (cd_mode)
+        if (ngsys.cdmode)
             geo_cd_tick((icycs * DIV_M68K) >> oc);
 
         // Catch the Z80 and YM2610 up to the 68K
