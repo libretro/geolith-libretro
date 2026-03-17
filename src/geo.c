@@ -166,7 +166,7 @@ uint32_t geo_calc_mask(unsigned nbits, unsigned val) {
 static int geo_bios_load(mz_zip_archive *zip_archive) {
     const char *biosrom;
 
-    switch (geo_get_system()) {
+    switch (ngsys.sys) {
         default: case SYSTEM_AES: {
             biosrom = geo_get_region() == REGION_JP ?
                 "neo-po.bin" : "neo-epo.bin";
@@ -195,6 +195,11 @@ static int geo_bios_load(mz_zip_archive *zip_archive) {
         }
         case SYSTEM_CD: case SYSTEM_CDZ: {
             biosrom = "neocd.bin";
+            break;
+        }
+        case SYSTEM_CDU: {
+            biosrom = "uni-bioscd33.rom";
+            break;
         }
     }
 
