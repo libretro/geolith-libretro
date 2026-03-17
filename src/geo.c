@@ -193,7 +193,11 @@ static int geo_bios_load(mz_zip_archive *zip_archive) {
             biosrom = "uni-bios_4_0.rom";
             break;
         }
-        case SYSTEM_CD: case SYSTEM_CDZ: {
+        case SYSTEM_CD: {
+            biosrom = "top-sp1.bin"; // Top Loader
+            break;
+        }
+        case SYSTEM_CDZ: {
             biosrom = "neocd.bin";
             break;
         }
@@ -218,7 +222,7 @@ static int geo_bios_load(mz_zip_archive *zip_archive) {
     // Load L0 ROM
     romdata.l0 = mz_zip_reader_extract_file_to_heap(zip_archive,
         "000-lo.lo", &(romdata.l0sz), 0);
-    if (romdata.l0 == NULL) {
+    if (romdata.l0 == NULL && ngsys.sys != SYSTEM_CD) {
         mz_zip_reader_end(zip_archive);
         geo_bios_unload();
         geo_log(GEO_LOG_ERR, "Failed to load 000-lo.lo from BIOS archive!\n");
@@ -253,6 +257,24 @@ static int geo_bios_load(mz_zip_archive *zip_archive) {
     return 1;
 }
 
+static int geo_bios_load_aux(mz_zip_archive *zip_archive) {
+    if (ngsys.sys == SYSTEM_CD) {
+        // Load L0 ROM, not included in neocd.zip, but in neocdz.zip
+        romdata.l0 = mz_zip_reader_extract_file_to_heap(zip_archive,
+            "000-lo.lo", &(romdata.l0sz), 0);
+        if (romdata.l0 == NULL) {
+            mz_zip_reader_end(zip_archive);
+            geo_bios_unload();
+            geo_log(GEO_LOG_ERR,
+                "Failed to load 000-lo.lo from BIOS archive!\n");
+            return 0;
+        }
+    }
+
+    mz_zip_reader_end(zip_archive);
+    return 1;
+}
+
 // Load a zipped collection of System ROM data from a memory buffer
 int geo_bios_load_mem(void *data, size_t size) {
     mz_zip_archive zip_archive;
@@ -273,6 +295,17 @@ int geo_bios_load_file(const char *biospath) {
     if (!mz_zip_reader_init_file(&zip_archive, biospath, 0))
         return 0;
     return geo_bios_load(&zip_archive);
+}
+
+// Load a zipped collection of Auxiliary System ROM data from a file
+int geo_bios_load_file_aux(const char *biospath) {
+    mz_zip_archive zip_archive;
+    memset(&zip_archive, 0, sizeof(zip_archive));
+
+    // Make sure it's actually a zip file
+    if (!mz_zip_reader_init_file(&zip_archive, biospath, 0))
+        return 0;
+    return geo_bios_load_aux(&zip_archive);
 }
 
 void geo_bios_unload(void) {

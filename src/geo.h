@@ -177,6 +177,7 @@ romdata_t* geo_romdata_ptr(void);
 
 int geo_bios_load_mem(void*, size_t);
 int geo_bios_load_file(const char*);
+int geo_bios_load_file_aux(const char*);
 void geo_bios_unload(void);
 
 void geo_watchdog_reset(void);
