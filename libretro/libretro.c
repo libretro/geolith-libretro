@@ -1134,6 +1134,7 @@ bool retro_load_game(const struct retro_game_info *info) {
         }
     }
 
+    geo_set_region(region);
     geo_set_system(systype);
     geo_init();
 
