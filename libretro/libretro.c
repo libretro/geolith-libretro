@@ -1142,7 +1142,10 @@ bool retro_load_game(const struct retro_game_info *info) {
     char biospath[256];
     if (cd_mode) {
         const char *biosname;
-        biosname = "neocdz.zip";
+        if (systype == SYSTEM_CD)
+            biosname = "neocd.zip";
+        else
+            biosname = "neocdz.zip";
         snprintf(biospath, sizeof(biospath), "%s%c%s", sysdir, pss, biosname);
     }
     else {
@@ -1150,45 +1153,18 @@ bool retro_load_game(const struct retro_game_info *info) {
             systype ? "neogeo.zip" : "aes.zip");
     }
 
-    if (vfs) {
-        RFILE* barchive = filestream_open(biospath,
-            RETRO_VFS_FILE_ACCESS_READ, RETRO_VFS_FILE_ACCESS_HINT_NONE);
-
-        if (!barchive) {
-            log_cb(RETRO_LOG_ERROR, "Failed to open bios at: %s\n", biospath);
-            return false;
-        }
-
-        filestream_seek(barchive, 0, RETRO_VFS_SEEK_POSITION_END);
-        int64_t barchivesize = filestream_tell(barchive);
-
-        void* barchivebuf = (void*)calloc(1, barchivesize);
-        if (!barchivebuf) {
-            filestream_close(barchive);
-            return false;
-        }
-
-        filestream_seek(barchive, 0, RETRO_VFS_SEEK_POSITION_START);
-        if (filestream_read(barchive, barchivebuf, barchivesize) < 0) {
-            free(barchivebuf);
-            filestream_close(barchive);
-            return false;
-        }
-
-        filestream_close(barchive);
-
-        if (!geo_bios_load_mem(barchivebuf, barchivesize)) {
-            log_cb(RETRO_LOG_ERROR, "Failed to load bios at: %s\n", biospath);
-            free(barchivebuf);
-            return false;
-        }
-
-        free(barchivebuf);
-        barchivebuf = NULL;
-    }
-    else if (!geo_bios_load_file(biospath)) {
+    if (!geo_bios_load_file(biospath)) {
         log_cb(RETRO_LOG_ERROR, "Failed to load bios at: %s\n", biospath);
         return false;
+    }
+
+    // Neo Geo CD needs to load "000-lo.lo" from neocdz.zip
+    if (systype == SYSTEM_CD) {
+        snprintf(biospath, sizeof(biospath), "%s%cneocdz.zip", sysdir, pss);
+        if (!geo_bios_load_file_aux(biospath)) {
+            log_cb(RETRO_LOG_ERROR, "Failed to load bios at: %s\n", biospath);
+            return false;
+        }
     }
 
     if (cd_mode) {

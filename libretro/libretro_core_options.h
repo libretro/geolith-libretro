@@ -96,8 +96,8 @@ static struct retro_core_option_v2_definition option_defs_us[] = {
       NULL,
       "system",
       {
+         { "cd", "Neo Geo CD" },
          { "cdz", "Neo Geo CDZ" },
-         { "cd", "Neo Geo CD (Front Loader)" },
          { "cdz_unibios", "Neo Geo CDZ (Universe BIOS)" },
          { NULL, NULL },
       },
