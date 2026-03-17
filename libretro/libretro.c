@@ -28,12 +28,12 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
+#include <ctype.h>
 #include <stdio.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdarg.h>
 #include <string.h>
-#include <strings.h>
 
 #include "geo.h"
 #include "geo_cd.h"
@@ -67,7 +67,6 @@ static void *romdata = NULL;
 // CD mode flag and system type
 static int cd_mode = 0;
 static int cd_systype = SYSTEM_CDZ;
-static int cd_bios_unibios = 0;
 static int cd_speed_hack = 0;
 static int cd_skip_loading = 0;
 
@@ -636,16 +635,12 @@ static void check_variables(bool first_run) {
         var.value = NULL;
 
         if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
-            if (!strcmp(var.value, "cd")) {
+            if (!strcmp(var.value, "cd"))
                 cd_systype = SYSTEM_CD;
-                cd_bios_unibios = 0;
-            } else if (!strcmp(var.value, "cdz")) {
+            else if (!strcmp(var.value, "cdz"))
                 cd_systype = SYSTEM_CDZ;
-                cd_bios_unibios = 0;
-            } else if (!strcmp(var.value, "cdz_unibios")) {
-                cd_systype = SYSTEM_CDZ;
-                cd_bios_unibios = 1;
-            }
+            else if (!strcmp(var.value, "cdz_unibios"))
+                cd_systype = SYSTEM_CDU;
         }
 
         // Universe BIOS Hardware
@@ -926,10 +921,8 @@ void retro_init(void) {
         coins34 = 0x18;
     }
 
-    // Set up logging and system type
+    // Set up logging
     geo_log_set_callback(geo_retro_log);
-    geo_set_region(region);
-    geo_set_system(systype);
 
     // Allocate and pass the video buffer into the emulator
     vbuf = (uint32_t*)calloc(1, LSPC_WIDTH * LSPC_SCANLINES * sizeof(uint32_t));
@@ -949,9 +942,6 @@ void retro_init(void) {
     else {
         geo_mixer_set_raw(); // Bypass the emulator's internal resampler
     }
-
-    // Finish initialization
-    geo_init();
 }
 
 void retro_deinit(void) {
@@ -988,8 +978,10 @@ void retro_get_system_av_info(struct retro_system_av_info *info) {
     }
     else {
         info->timing = (struct retro_system_timing) {
-            .fps = systype ? FRAMERATE_MVS : FRAMERATE_AES,
-            .sample_rate = systype ? 55555 : 55943.49
+            .fps = systype == SYSTEM_MVS || systype == SYSTEM_UNI ?
+                FRAMERATE_MVS : FRAMERATE_AES,
+            .sample_rate = systype == SYSTEM_MVS || systype == SYSTEM_UNI ?
+                55555 : 55943.49
         };
     }
 
@@ -1128,27 +1120,32 @@ bool retro_load_game(const struct retro_game_info *info) {
     // Detect CD mode from file extension
     cd_mode = 0;
     if (info->path) {
-        const char *ext = strrchr(info->path, '.');
-        if (ext && (!strcasecmp(ext, ".chd") || !strcasecmp(ext, ".cue"))) {
+        const char *extptr = strrchr(info->path, '.');
+
+        // Convert extension to lower case
+        char ext[5];
+        snprintf(ext, sizeof(ext), "%s", extptr);
+        for (size_t i = 0; i < strlen(extptr); ++i)
+            ext[i] = tolower(ext[i]);
+
+        if (!strcmp(ext, ".chd") || !strcmp(ext, ".cue")) {
             cd_mode = 1;
             systype = cd_systype;
-            geo_set_system(systype);
         }
     }
+
+    geo_set_system(systype);
+    geo_init();
 
     update_option_visibility();
 
     char biospath[256];
     if (cd_mode) {
         const char *biosname;
-        if (cd_bios_unibios)
-            biosname = "uni-bioscd.zip";
-        else if (systype == SYSTEM_CDZ)
-            biosname = "neocdz.zip";
-        else
-            biosname = "neocd.zip";
+        biosname = "neocdz.zip";
         snprintf(biospath, sizeof(biospath), "%s%c%s", sysdir, pss, biosname);
-    } else {
+    }
+    else {
         snprintf(biospath, sizeof(biospath), "%s%c%s", sysdir, pss,
             systype ? "neogeo.zip" : "aes.zip");
     }
@@ -1215,7 +1212,8 @@ bool retro_load_game(const struct retro_game_info *info) {
             if (romdata) {
                 memcpy(romdata, info->data, info->size);
             }
-        } else if (info->path) {
+        }
+        else if (info->path) {
             // need_fullpath is true, so load from path
             FILE *f = fopen(info->path, "rb");
             if (!f) {
@@ -1247,7 +1245,8 @@ bool retro_load_game(const struct retro_game_info *info) {
                 retro_unload_game();
                 return false;
             }
-        } else {
+        }
+        else {
             log_cb(RETRO_LOG_ERROR, "No ROM data provided\n");
             return false;
         }
@@ -1306,15 +1305,6 @@ bool retro_load_game(const struct retro_game_info *info) {
     }
 
     if (cd_mode) {
-        // CD subsystem must be initialized after BIOS is loaded and disc is
-        // opened, but before the first reset. retro_init()/geo_init() runs
-        // before we know the content type, so CD init is deferred to here.
-        geo_set_system(systype);
-        geo_cd_set_speed_hack(cd_speed_hack);
-        geo_cd_init();
-        geo_m68k_set_memmap_cd();
-        geo_z80_set_cd_mode();
-
         // Load CD backup RAM from disk
         char savename[292];
         snprintf(savename, sizeof(savename), "%s%c%s.srm",
