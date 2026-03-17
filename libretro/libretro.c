@@ -1282,6 +1282,8 @@ bool retro_load_game(const struct retro_game_info *info) {
     }
 
     if (cd_mode) {
+        geo_cd_set_speed_hack(cd_speed_hack);
+
         // Load CD backup RAM from disk
         char savename[292];
         snprintf(savename, sizeof(savename), "%s%c%s.srm",
