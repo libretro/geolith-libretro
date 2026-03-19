@@ -37,6 +37,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 // CD communication vector (0x54=decoder, 0x58=communication)
 extern uint32_t cd_irq_vector;
 
+void geo_cd_postload(void);
 void geo_cd_init(void);
 void geo_cd_deinit(void);
 void geo_cd_reset(void);

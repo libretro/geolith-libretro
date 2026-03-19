@@ -1131,6 +1131,7 @@ bool retro_load_game(const struct retro_game_info *info) {
         if (!strcmp(ext, ".chd") || !strcmp(ext, ".cue")) {
             cd_mode = 1;
             systype = cd_systype;
+            geo_cd_set_speed_hack(cd_speed_hack);
         }
     }
 
@@ -1175,7 +1176,7 @@ bool retro_load_game(const struct retro_game_info *info) {
             retro_unload_game();
             return false;
         }
-        geo_m68k_postload();
+        geo_cd_postload();
     }
     else {
         // Cartridge mode: load NEO file
@@ -1282,8 +1283,6 @@ bool retro_load_game(const struct retro_game_info *info) {
     }
 
     if (cd_mode) {
-        geo_cd_set_speed_hack(cd_speed_hack);
-
         // Load CD backup RAM from disk
         char savename[292];
         snprintf(savename, sizeof(savename), "%s%c%s.srm",

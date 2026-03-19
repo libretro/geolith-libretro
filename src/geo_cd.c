@@ -80,6 +80,9 @@ static uint8_t z80_enabled = 0;
 // SRAM lock
 static uint8_t reg_sramlock = 0;
 
+// CDZ Protection
+static unsigned protection_bypassed = 0;
+
 // =========================================================================
 // LC8951 CD Controller
 // =========================================================================
@@ -348,6 +351,33 @@ static inline uint8_t from_bcd(uint8_t val) {
     return ((val >> 4) * 10) + (val & 0x0f);
 }
 
+static void protection_bypass(uint8_t *sector, size_t len) {
+    /* This is a somewhat dirty hack for CDZ protection which hijacks a sector
+       read containing the "NEO-GEO" signature and some extra data. When the
+       signature is found, the relevent data is modified to pass the protection
+       checks.
+       https://wiki.neogeodev.org/index.php/Copy_protection
+
+       The correct way to do this involves Query TOC/position info subcommand 2
+    */
+    const uint8_t sig[] = { 'N', 'E', 'O', '-', 'G', 'E', 'O' };
+
+    for (size_t i = 0; i + sizeof(sig) < len; i++) {
+        if (memcmp(sector + i, sig, sizeof(sig)) == 0) {
+            size_t code_start = i + 0x0A;
+            int patched = 0;
+            for (size_t j = code_start; j < len && patched < 2; j++) {
+                if (sector[j] == 0x67) {
+                    sector[j] = 0x66;
+                    patched++;
+                }
+            }
+            protection_bypassed = 1;
+            return;
+        }
+    }
+}
+
 // =========================================================================
 // LC8951 Implementation
 // =========================================================================
@@ -488,6 +518,8 @@ static void lc8951_sector_decoded(void) {
 
     uint8_t sector[GEO_DISC_DATA_SIZE];
     geo_disc_read_sector(cd.play_lba, sector);
+    if (!protection_bypassed)
+        protection_bypass(sector, GEO_DISC_DATA_SIZE);
     lc_buffer_write((uint16_t)(lc.wal + 4), sector, GEO_DISC_DATA_SIZE);
 
     // PTL = WAL (snapshot before advancing — tells BIOS where sector starts)
@@ -1816,7 +1848,6 @@ static void bios_patch(uint8_t *bios, size_t sz, uint32_t offset,
 }
 
 // NOP instruction (4E71) and STOP #$2000 + NOP (halt CPU until IRQ, supervisor mode)
-static const uint8_t NOP2[] = { 0x4E, 0x71 };
 static const uint8_t STOP_NOP[] = { 0x4E, 0x72, 0x20, 0x00, 0x4E, 0x71 };
 
 int geo_cd_detect_bios(uint8_t *bios, size_t sz) {
@@ -1838,32 +1869,6 @@ int geo_cd_detect_bios(uint8_t *bios, size_t sz) {
         return CD_BIOS_FRONT;
 
     return CD_BIOS_UNKNOWN;
-}
-
-// Apply CD recognition bypass patches (protection check skip)
-static void bios_patch_recognition(uint8_t *bios, size_t sz, int family) {
-    int applied = 0;
-    switch (family) {
-        case CD_BIOS_CDZ:
-            if (bios_pattern(bios, sz, 0xEB82, (uint8_t[]){0x66,0x10}, 2)) {
-                bios_patch(bios, sz, 0xEB82, NOP2, 2); applied++;
-            }
-            if (bios_pattern(bios, sz, 0xD280, (uint8_t[]){0x66,0x74}, 2)) {
-                bios_patch(bios, sz, 0xD280, NOP2, 2); applied++;
-            }
-            break;
-        case CD_BIOS_FRONT:
-            if (bios_pattern(bios, sz, 0x10B64, (uint8_t[]){0x66,0x04}, 2)) {
-                bios_patch(bios, sz, 0x10B64, NOP2, 2); applied++;
-            }
-            break;
-        case CD_BIOS_TOP:
-            if (bios_pattern(bios, sz, 0x10436, (uint8_t[]){0x66,0x04}, 2)) {
-                bios_patch(bios, sz, 0x10436, NOP2, 2); applied++;
-            }
-            break;
-    }
-    geo_log(GEO_LOG_INF, "BIOS recognition patches applied: %d\n", applied);
 }
 
 // Apply speed hack patches (replace busy-wait loops with STOP)
@@ -1909,8 +1914,9 @@ void geo_cd_clear_sector_decoded(void) {
     sector_decoded_this_frame = 0;
 }
 
-void geo_cd_init(void) {
-    romdata = geo_romdata_ptr();
+void geo_cd_postload(void) {
+    // First, byteswap the BIOS
+    geo_m68k_postload();
 
     // Detect BIOS family and apply patches
     if (romdata->b && romdata->bsz >= SIZE_512K) {
@@ -1921,15 +1927,18 @@ void geo_cd_init(void) {
             bios_family == CD_BIOS_TOP ? "Top Loader" :
             bios_family == CD_BIOS_FRONT ? "Front Loader" : "Unknown",
             romdata->b[0], romdata->b[1], romdata->b[2], romdata->b[3],
-            romdata->b[0x6C], romdata->b[0x6D], romdata->b[0x6E], romdata->b[0x6F]);
-
-        // Always apply recognition bypass (copy protection skip)
-        bios_patch_recognition(romdata->b, romdata->bsz, bios_family);
+            romdata->b[0x6C], romdata->b[0x6D], romdata->b[0x6E],
+            romdata->b[0x6F]);
 
         // Apply speed hack if enabled
         if (speed_hack_enabled)
             bios_patch_speed_hack(romdata->b, romdata->bsz, bios_family);
     }
+}
+
+void geo_cd_init(void) {
+    protection_bypassed = 0;
+    romdata = geo_romdata_ptr();
 
     memset(pram, 0, SIZE_2M);
     memset(spr_dram, 0, SIZE_4M);
