@@ -415,8 +415,7 @@ void geo_reset(int hard) {
     ngsys.watchdog = 0;
 
     geo_m68k_reset();
-    geo_z80_reset();
-    geo_ymfm_reset(); // Reset the YM2610 to make sure everything is defaulted
+    geo_z80_reset(); // Also resets the YM2610
     geo_lspc_init();
 
     if (ngsys.cdmode)
@@ -461,9 +460,9 @@ void geo_init(void) {
         irq_timer_level = IRQ_RESET;
         watchdog_enabled = 0; // CD watchdog starts disabled
 
-        geo_cd_init();
         geo_m68k_set_memmap_cd();
         geo_z80_set_cd_mode();
+        geo_cd_init();
     }
 }
 

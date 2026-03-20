@@ -71,7 +71,6 @@ static uint8_t reg_envideo = 0;
 // Bus request states
 static uint8_t busreq_spr = 0;
 static uint8_t busreq_pcm = 0;
-static uint8_t busreq_z80 = 0;
 static uint8_t busreq_fix = 0;
 
 // Z80 reset/enable control
@@ -1230,17 +1229,16 @@ static void cd_reg_write_8(uint32_t addr, uint8_t val) {
             return;
 
         case 0x0121: busreq_spr = 1; return;
-        case 0x0131: busreq_spr = 0; return;
         case 0x0123: busreq_pcm = 1; return;
-        case 0x0133: busreq_pcm = 0; return;
-        case 0x0127: busreq_z80 = 1; return;
-        case 0x0137: busreq_z80 = 0; return;
+        case 0x0127: geo_z80_busreq(1); return;
         case 0x0129: busreq_fix = 1; return;
-        case 0x0139: busreq_fix = 0; return;
+
+        case 0x0131: busreq_spr = 0; return;
+        case 0x0133: busreq_pcm = 0; return;
 
         case 0x0141: busreq_spr = 0; return; // SPR bus release
         case 0x0143: busreq_pcm = 0; return; // PCM bus release
-        case 0x0147: busreq_z80 = 0; return; // Z80 bus release
+        case 0x0147: geo_z80_busreq(0); return; // Z80 bus release
         case 0x0149: busreq_fix = 0; return; // FIX bus release
 
         case 0x0163: { // CD command write
@@ -1290,7 +1288,8 @@ static void cd_reg_write_8(uint32_t addr, uint8_t val) {
         case 0x0183: // Z80 reset/enable
             if (val == 0x00) {
                 z80_enabled = 0;
-            } else {
+            }
+            else {
                 z80_enabled = 1;
                 geo_z80_reset();
             }
@@ -1984,7 +1983,6 @@ void geo_cd_reset(void) {
     reg_envideo = 0;
     busreq_spr = 0;
     busreq_pcm = 0;
-    busreq_z80 = 0;
     busreq_fix = 0;
     z80_enabled = 0;
     reg_sramlock = 0;
@@ -2003,6 +2001,8 @@ void geo_cd_reset(void) {
     cached_track = 1;
     cached_track_start = 0;
     cached_track_end = 0;
+
+    protection_bypassed = 0;
 
     lc8951_reset();
     cd_comm_reset();
@@ -2066,7 +2066,6 @@ void geo_cd_state_save(uint8_t *st) {
     // Bus request and IRQ mask state
     geo_serial_push8(st, busreq_spr);
     geo_serial_push8(st, busreq_pcm);
-    geo_serial_push8(st, busreq_z80);
     geo_serial_push8(st, busreq_fix);
     geo_serial_push16(st, irq_mask1);
     geo_serial_push16(st, irq_mask2);
@@ -2113,7 +2112,6 @@ void geo_cd_state_load(uint8_t *st) {
 
     busreq_spr = geo_serial_pop8(st);
     busreq_pcm = geo_serial_pop8(st);
-    busreq_z80 = geo_serial_pop8(st);
     busreq_fix = geo_serial_pop8(st);
     irq_mask1 = geo_serial_pop16(st);
     irq_mask2 = geo_serial_pop16(st);

@@ -44,6 +44,7 @@ static romdata_t *romdata = NULL;
 static uint8_t *mrom = NULL;
 
 static uint8_t nmi_enabled = 0;
+static uint8_t busreq = 0;
 static uint8_t zram[SIZE_2K];
 static uint32_t zbank[4];
 
@@ -232,15 +233,13 @@ static void geo_z80_port_wr(z80 *userdata, uint16_t port, uint8_t value) {
 // Reset the Z80
 void geo_z80_reset(void) {
     z80_reset(&z80ctx);
+    ym2610_reset();
     nmi_enabled = 0;
 
-    if (ngsys.cdmode) {
+    if (ngsys.cdmode)
         mrom = romdata->m;
-    }
-    else {
-        // Set the M ROM based on system type - AES does not have SM1 ROM
-        geo_z80_set_mrom(geo_get_system() == SYSTEM_AES);
-    }
+    else // Set the M ROM based on system type - AES does not have SM1 ROM
+        geo_z80_set_mrom(ngsys.sys == SYSTEM_AES);
 }
 
 // Initialize the Z80
@@ -268,7 +267,14 @@ void geo_z80_init(void) {
 
 // Run at least N Z80 cycles
 int geo_z80_run(unsigned cycs) {
+    if (busreq)
+        return 1;
     return z80_step_n(&z80ctx, cycs);
+}
+
+// Assert or clear BUSREQ
+void geo_z80_busreq(unsigned b) {
+    busreq = b;
 }
 
 // Pulse the Z80 NMI line
@@ -293,6 +299,7 @@ void geo_z80_set_mrom(unsigned m) {
 
 void geo_z80_set_cd_mode(void) {
     mrom = romdata->m;
+    busreq = 1; // CD mode should start with busreq set
     z80ctx.read_byte = &geo_z80_cd_mem_rd;
     z80ctx.write_byte = &geo_z80_cd_mem_wr;
 }
@@ -331,6 +338,8 @@ void geo_z80_state_load(uint8_t *st) {
     z80ctx.irq_pending = geo_serial_pop8(st);
     z80ctx.nmi_pending = geo_serial_pop8(st);
     nmi_enabled = geo_serial_pop8(st);
+    if (ngsys.cdmode)
+        busreq = geo_serial_pop8(st);
     geo_serial_popblk(zram, st, SIZE_2K);
     for (int i = 0; i < 4; ++i) zbank[i] = geo_serial_pop32(st);
 }
@@ -369,6 +378,8 @@ void geo_z80_state_save(uint8_t *st) {
     geo_serial_push8(st, z80ctx.irq_pending);
     geo_serial_push8(st, z80ctx.nmi_pending);
     geo_serial_push8(st, nmi_enabled);
+    if (ngsys.cdmode)
+        geo_serial_push8(st, busreq);
     geo_serial_pushblk(st, zram, SIZE_2K);
     for (int i = 0; i < 4; ++i) geo_serial_push32(st, zbank[i]);
 }

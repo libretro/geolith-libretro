@@ -32,6 +32,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define GEO_Z80_H
 
 int geo_z80_run(unsigned);
+void geo_z80_busreq(unsigned);
 void geo_z80_nmi(void);
 void geo_z80_assert_irq(unsigned);
 void geo_z80_clear_irq(void);
