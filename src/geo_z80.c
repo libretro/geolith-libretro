@@ -293,6 +293,17 @@ void geo_z80_clear_irq(void) {
     z80_clr_irq(&z80ctx);
 }
 
+// Assert the Z80 RESET line
+void geo_z80_assert_reset(void) {
+    z80ctx.halted = 1;
+}
+
+// Clear the Z80 RESET line
+void geo_z80_clear_reset(void) {
+    // Just perform a regular reset, which also clears the halted flag
+    geo_z80_reset();
+}
+
 void geo_z80_set_mrom(unsigned m) {
     mrom = m ? romdata->m : romdata->sm;
 }

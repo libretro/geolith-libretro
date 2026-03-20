@@ -1302,10 +1302,11 @@ static void cd_reg_write_8(uint32_t addr, uint8_t val) {
         case 0x0183: // Z80 reset/enable
             if (val == 0x00) {
                 z80_enabled = 0;
+                geo_z80_assert_reset();
             }
             else {
                 z80_enabled = 1;
-                geo_z80_reset();
+                geo_z80_clear_reset();
             }
             return;
 
