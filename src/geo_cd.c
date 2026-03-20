@@ -311,11 +311,15 @@ static unsigned find_track_for_lba(uint32_t lba) {
     return track;
 }
 
-// CDDA audio buffer — accumulates across multiple sector reads per video frame
+/* CDDA audio - demand-driven by the mixer (not timed according to the master
+   clock based tick function). The mixer calls geo_cd_read_cdda() to pull
+   exactly the samples it needs. A cached sector bridges the 588-sample sector
+   boundary.
+*/
 #define CDDA_SAMPLES_PER_SECTOR 588
-#define CDDA_BUF_MAXSAMPLES (CDDA_SAMPLES_PER_SECTOR * 3)
-static int16_t cdda_buf[CDDA_BUF_MAXSAMPLES * 2]; // Stereo interleaved
-static size_t cdda_samples = 0;
+static int16_t cdda_sector_cache[CDDA_SAMPLES_PER_SECTOR * 2]; // Current sector
+static size_t cdda_sector_pos = CDDA_SAMPLES_PER_SECTOR; // Position in cache (start exhausted)
+static uint32_t cdda_audio_lba = 0; // Audio stream LBA (independent of cd.play_lba)
 static uint8_t cdda_playing = 0;
 
 // Master cycle counter within the frame — for cycle-accurate CDDA sample indexing
@@ -736,6 +740,8 @@ static void cd_comm_process_command(void) {
                 cd.playing_audio = 1;
                 cd.playing_data = 0;
                 cdda_playing = 1;
+                cdda_audio_lba = lba;
+                cdda_sector_pos = CDDA_SAMPLES_PER_SECTOR; // Force new sector read
             } else {
                 cd.playing_audio = 0;
                 cd.playing_data = 1;
@@ -786,8 +792,11 @@ static void cd_comm_process_command(void) {
         case 0x70: // Resume
             if (cd.playing_audio || cd.playing_data) {
                 cd.drive_status = CD_STATUS_PLAY;
-                if (cd.playing_audio)
+                if (cd.playing_audio) {
                     cdda_playing = 1;
+                    cdda_audio_lba = cd.play_lba;
+                    cdda_sector_pos = CDDA_SAMPLES_PER_SECTOR;
+                }
             }
             cd.status[0] = cd.drive_status;
             break;
@@ -1145,15 +1154,11 @@ static uint16_t cd_reg_read_16(uint32_t addr) {
 
         case 0x0188: // CDDA left channel (bit-reversed)
         case 0x018a: { // CDDA right channel (bit-reversed)
-            if (!cdda_playing || cdda_samples == 0)
+            if (!cdda_playing || cdda_sector_pos >= CDDA_SAMPLES_PER_SECTOR)
                 return 0;
-            // Map current master cycle position to a sample index in the buffer
-            size_t idx =
-                (size_t)cd_frame_mcycs * cdda_samples / MCYC_PER_FRAME_CD;
-            if (idx >= cdda_samples)
-                idx = cdda_samples - 1;
             int ch = (addr == 0x018a) ? 1 : 0;
-            return reverse_bits_16((uint16_t)cdda_buf[idx * 2 + ch]);
+            return reverse_bits_16(
+                (uint16_t)cdda_sector_cache[cdda_sector_pos * 2 + ch]);
         }
     }
 
@@ -1745,7 +1750,9 @@ void geo_cd_tick(unsigned mcycles) {
             cd.playing_data = !is_audio;
             cdda_playing = is_audio;
 
-            lc8951_sector_decoded();
+            // Only run the LC8951 sector decoder for data tracks
+            if (cd.playing_data)
+                lc8951_sector_decoded();
 
             if (lc.decoder_enabled &&
                 (irq_mask1 & 0x500) == 0x500 &&
@@ -1756,18 +1763,6 @@ void geo_cd_tick(unsigned mcycles) {
                 sector_decoded_this_frame = 1;
             }
 
-            // Audio sector: accumulate CDDA samples
-            if (cd.playing_audio && cd.play_lba < geo_disc_leadout()) {
-                if (cdda_samples + CDDA_SAMPLES_PER_SECTOR <= CDDA_BUF_MAXSAMPLES) {
-                    int16_t *dst = cdda_buf + (cdda_samples * 2);
-                    if (geo_disc_read_audio(cd.play_lba, dst)) {
-                        cdda_samples += CDDA_SAMPLES_PER_SECTOR;
-                    } else {
-                        memset(dst, 0, CDDA_SAMPLES_PER_SECTOR * 2 * sizeof(int16_t));
-                        cdda_samples += CDDA_SAMPLES_PER_SECTOR;
-                    }
-                }
-            }
             cd.play_lba++;
         }
 
@@ -1797,33 +1792,37 @@ void geo_cd_set_vbl_pending(void) {
 // =========================================================================
 // CDDA Audio Access
 // =========================================================================
-int geo_cd_is_playing_cdda(void) {
-    return cdda_playing;
-}
 
-int16_t* geo_cd_get_cdda_buffer(void) {
-    return cdda_buf;
-}
+// Read new audio data from CD as needed, silence when not playing
+void geo_cd_read_cdda(int16_t *out, size_t numsamps) {
+    for (size_t i = 0; i < numsamps; ++i) {
+        if (!cdda_playing) { // Silence!
+            out[i << 1] = out[(i << 1) + 1] = 0;
+            continue;
+        }
 
-size_t geo_cd_get_cdda_samples(void) {
-    return cdda_samples;
-}
+        // Check if a new sector should be read
+        if (cdda_sector_pos >= CDDA_SAMPLES_PER_SECTOR) {
+            if (cdda_audio_lba < geo_disc_leadout() &&
+                geo_disc_track_is_audio(find_track_for_lba(cdda_audio_lba))) {
+                if (!geo_disc_read_audio(cdda_audio_lba, cdda_sector_cache))
+                    memset(cdda_sector_cache, 0, sizeof(cdda_sector_cache));
+            }
+            else {
+                memset(cdda_sector_cache, 0, sizeof(cdda_sector_cache));
+            }
+            cdda_audio_lba++;
+            cdda_sector_pos = 0;
+        }
 
-void geo_cd_cdda_clear(void) {
-    cdda_samples = 0;
-}
-
-void geo_cd_cdda_consume(size_t consumed) {
-    // Reset frame cycle counter — consume is called once per frame by the mixer
-    cd_frame_mcycs = 0;
-
-    if (consumed >= cdda_samples) {
-        cdda_samples = 0;
-        return;
+        out[i << 1]     = cdda_sector_cache[cdda_sector_pos << 1];
+        out[(i << 1) + 1] = cdda_sector_cache[(cdda_sector_pos << 1) + 1];
+        ++cdda_sector_pos;
     }
-    size_t remaining = cdda_samples - consumed;
-    memmove(cdda_buf, cdda_buf + consumed * 2, remaining * 2 * sizeof(int16_t));
-    cdda_samples = remaining;
+}
+
+void geo_cd_frame_end(void) {
+    cd_frame_mcycs = 0;
 }
 
 // =========================================================================
@@ -1938,6 +1937,7 @@ void geo_cd_postload(void) {
 
 void geo_cd_init(void) {
     protection_bypassed = 0;
+    cd_frame_mcycs = 0;
     romdata = geo_romdata_ptr();
 
     memset(pram, 0, SIZE_2M);
@@ -1996,7 +1996,9 @@ void geo_cd_reset(void) {
     vbl_pending = 0;
     cd_sector_counter = 0;
     cdda_playing = 0;
-    cdda_samples = 0;
+    cdda_audio_lba = 0;
+    cdda_sector_pos = CDDA_SAMPLES_PER_SECTOR;
+    memset(cdda_sector_cache, 0, sizeof(cdda_sector_cache));
     cd_frame_mcycs = 0;
     cached_track = 1;
     cached_track_start = 0;
@@ -2031,7 +2033,7 @@ const void* geo_cd_pram_ptr(void) {
 size_t geo_cd_state_size(void) {
     return SIZE_2M + SIZE_4M + SIZE_1M + SIZE_64K + SIZE_128K + SIZE_8K +
            sizeof(lc) + sizeof(cd) + sizeof(dma) +
-           sizeof(cdda_buf) + 128;
+           sizeof(cdda_sector_cache) + 128;
 }
 
 void geo_cd_state_save(uint8_t *st) {
@@ -2078,8 +2080,9 @@ void geo_cd_state_save(uint8_t *st) {
     geo_serial_push32(st, cd_frame_mcycs);
 
     // CDDA state
-    geo_serial_pushblk(st, (uint8_t*)cdda_buf, sizeof(cdda_buf));
-    geo_serial_push32(st, (uint32_t)cdda_samples);
+    geo_serial_pushblk(st, (uint8_t*)cdda_sector_cache, sizeof(cdda_sector_cache));
+    geo_serial_push32(st, (uint32_t)cdda_sector_pos);
+    geo_serial_push32(st, cdda_audio_lba);
     geo_serial_push8(st, cdda_playing);
 }
 
@@ -2122,8 +2125,9 @@ void geo_cd_state_load(uint8_t *st) {
     sector_decoded_this_frame = geo_serial_pop8(st);
     cd_frame_mcycs = geo_serial_pop32(st);
 
-    geo_serial_popblk((uint8_t*)cdda_buf, st, sizeof(cdda_buf));
-    cdda_samples = (size_t)geo_serial_pop32(st);
+    geo_serial_popblk((uint8_t*)cdda_sector_cache, st, sizeof(cdda_sector_cache));
+    cdda_sector_pos = (size_t)geo_serial_pop32(st);
+    cdda_audio_lba = geo_serial_pop32(st);
     cdda_playing = geo_serial_pop8(st);
 
     // Rebuild track cache from current position

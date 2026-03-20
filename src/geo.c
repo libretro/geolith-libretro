@@ -749,6 +749,9 @@ void geo_exec(void) {
     geo_mixer_output(ymsamps);
     ymsamps = 0;
 
+    if (ngsys.cdmode)
+        geo_cd_frame_end();
+
     // Increment the Watchdog counter at the end of each frame
     geo_watchdog_increment();
 }

@@ -165,7 +165,7 @@ static struct retro_core_option_v2_definition option_defs_us[] = {
       "geolith_force_int_timing",
       "Force Integer Timing (Restart)",
       "Force Integer Timing",
-      "Force the use of exactly 60Hz internal refresh rate and 48000Hz audio "
+      "Force the use of exactly 60Hz internal refresh rate and 44100Hz audio "
       "sample rate",
       NULL,
       "system",

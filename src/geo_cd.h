@@ -37,6 +37,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 // CD communication vector (0x54=decoder, 0x58=communication)
 extern uint32_t cd_irq_vector;
 
+void geo_cd_frame_end(void);
+
 void geo_cd_postload(void);
 void geo_cd_init(void);
 void geo_cd_deinit(void);
@@ -56,11 +58,8 @@ int geo_cd_vbl_enabled(void);
 void geo_cd_set_vbl_pending(void);
 
 // CDDA audio access for mixer
-int geo_cd_is_playing_cdda(void);
-int16_t* geo_cd_get_cdda_buffer(void);
-size_t geo_cd_get_cdda_samples(void);
-void geo_cd_cdda_clear(void);
-void geo_cd_cdda_consume(size_t consumed);
+void geo_cd_read_cdda(int16_t *out, size_t nsamples);
+void geo_cd_frame_start(void);
 
 // State serialization
 void geo_cd_state_load(uint8_t *st);

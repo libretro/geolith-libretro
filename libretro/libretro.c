@@ -50,6 +50,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 // libretro-common
 #include "streams/file_stream.h"
 
+#define SAMPLERATE_RESAMP 44100
+
 #if defined(_WIN32)
    static const char pss = '\\';
 #else
@@ -934,14 +936,12 @@ void retro_init(void) {
 
     // Set up audio callback
     geo_mixer_set_callback(geo_cb_audio);
+    geo_mixer_init();
 
-    if (force_int_timing) {
-        geo_mixer_set_rate(48000);
-        geo_mixer_init();
-    }
-    else {
-        geo_mixer_set_raw(); // Bypass the emulator's internal resampler
-    }
+    if (force_int_timing)
+        geo_mixer_set_rate(SAMPLERATE_RESAMP);
+    else
+        geo_mixer_set_raw(1); // Bypass the emulator's internal resampler
 }
 
 void retro_deinit(void) {
@@ -973,7 +973,12 @@ void retro_get_system_info(struct retro_system_info *info) {
 void retro_get_system_av_info(struct retro_system_av_info *info) {
     if (force_int_timing) {
         info->timing = (struct retro_system_timing) {
-            .fps = 60, .sample_rate = 48000
+            .fps = 60, .sample_rate = SAMPLERATE_RESAMP
+        };
+    }
+    else if (systype >= SYSTEM_CD) {
+        info->timing = (struct retro_system_timing) {
+            .fps = FRAMERATE_AES, .sample_rate = SAMPLERATE_RESAMP
         };
     }
     else {
@@ -1131,6 +1136,10 @@ bool retro_load_game(const struct retro_game_info *info) {
         if (!strcmp(ext, ".chd") || !strcmp(ext, ".cue")) {
             cd_mode = 1;
             systype = cd_systype;
+            geo_mixer_deinit();
+            geo_mixer_set_rate(force_int_timing ? SAMPLERATE_RESAMP: 44396);
+            geo_mixer_set_raw(0);
+            geo_mixer_init();
             geo_cd_set_speed_hack(cd_speed_hack);
         }
     }
