@@ -1141,14 +1141,28 @@ static uint16_t cd_reg_read_16(uint32_t addr) {
         case 0x0004: // VBL Interrupt Mask (VITAL - saved/restored on stack)
             return irq_mask2;
 
-        case 0x011c: { // System Config
-            // 00ST00NN 00000000
-            // S = show eject button, N = nationality, T = tray
-            uint16_t nat = (~geo_get_region()) & 0x07;
-            uint16_t tray = 0x10; // CD: tray closed = 1
-            if (geo_get_system() == SYSTEM_CDZ)
-                tray = 0x00; // CDZ: inverted (0 = closed)
-            return (nat | tray) << 8;
+        case 0x011c: { // REG_CDCONFIG
+            /* 11CLNNNN 00000000 - C = CD Mech, L = Lid Status, N = Nationality
+
+               Country Code (Details from Top Loader motherboard)
+               =================================
+               |       | JN4 | JN3 | JN2 | JN1 |
+               =================================
+               | JAPAN |  X  |  X  |  X  |  X  |
+               | U S A |  X  |  X  |  X  |  0  |
+               | E U R |  X  |  X  |  0  |  X  |
+               ---------------------------------
+            */
+            unsigned nat = 0x0000;
+            switch (ngsys.region) {
+                case REGION_JP: nat = 0x0f00; break;
+                case REGION_US: nat = 0x0e00; break;
+                default: nat = 0x0d00; break; // Europe and Asia (?)
+            }
+
+            unsigned mech = 0x0000; // 0 = Top Loader/CDZ, 1 = Front Loader
+            unsigned tray = ngsys.sys == SYSTEM_CD ? 0x1000 : 0x0000;
+            return (uint16_t)(nat | mech | tray) | 0xc000;
         }
 
         case 0x0188: // CDDA left channel (bit-reversed)
