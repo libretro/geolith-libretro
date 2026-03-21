@@ -178,7 +178,7 @@ static uint32_t parse_msf(const char *str) {
 }
 
 // Strip leading/trailing whitespace and quotes from a string in-place
-static void strip_quotes(char *str) {
+/*static void strip_quotes(char *str) {
     // Skip leading whitespace
     char *start = str;
     while (*start && isspace((unsigned char)*start))
@@ -198,7 +198,7 @@ static void strip_quotes(char *str) {
 
     if (start != str)
         memmove(str, start, len + 1);
-}
+}*/
 
 // Get file size for a BIN/ISO file
 static uint32_t file_size_frames(int file_idx) {
@@ -378,21 +378,25 @@ int geo_cue_open(const char *path) {
                 cd_pos += t->pregap;
                 t->start = cd_pos;
 
-                // Finalize previous track length if it shares the same file
+                // Finalize previous track length and advance cd_pos
                 if (cur_track > 0) {
                     cue_track_t *prev = &tracks[cur_track - 1];
                     if (prev->frames == 0 &&
                         prev->file_idx == t->file_idx) {
-                        // Previous track runs from its file_offset to this
-                        // track's pregap start (or INDEX 01 if no pregap)
+                        // Same file: previous track runs to this track's start
                         uint32_t prev_start_frame =
                             prev->file_offset / prev->sector_size;
-                        uint32_t this_start_frame;
-                        if (t->pregap && pending_index00)
-                            this_start_frame = index00_offset;
-                        else
-                            this_start_frame = offset;
+                        uint32_t this_start_frame = offset;
                         prev->frames = this_start_frame - prev_start_frame;
+                        cd_pos = prev->start + prev->frames + t->pregap;
+                        t->start = cd_pos;
+                    }
+                    else if (prev->frames == 0) {
+                        // Different file: compute length from file size
+                        uint32_t total = file_size_frames(prev->file_idx);
+                        uint32_t start_frame =
+                            prev->file_offset / prev->sector_size;
+                        prev->frames = total - start_frame;
                         cd_pos = prev->start + prev->frames + t->pregap;
                         t->start = cd_pos;
                     }
