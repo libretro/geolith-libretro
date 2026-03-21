@@ -295,13 +295,15 @@ void geo_z80_clear_irq(void) {
 
 // Assert the Z80 RESET line
 void geo_z80_assert_reset(void) {
+    // Halt the Z80, and also reset the YM2610
     z80ctx.halted = 1;
+    ym2610_reset();
 }
 
 // Clear the Z80 RESET line
 void geo_z80_clear_reset(void) {
-    // Just perform a regular reset, which also clears the halted flag
-    geo_z80_reset();
+    // Reset the Z80, which also clears the halted flag
+    z80_reset(&z80ctx);
 }
 
 void geo_z80_set_mrom(unsigned m) {
