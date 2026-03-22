@@ -67,8 +67,8 @@ void geo_chd_lba_to_msf(uint32_t lba, uint8_t *m, uint8_t *s, uint8_t *f) {
 
 static int geo_chd_parse_toc(void) {
     char metadata[256];
-    UINT32 len;
-    UINT32 tag;
+    uint32_t len;
+    uint32_t tag;
 
     // Two position counters:
     // chdPos = position in CHD data (for reading sectors)
