@@ -1748,7 +1748,8 @@ void geo_cd_tick(unsigned mcycles) {
     // Set timer rate based on play state
     int is_playing = cd.playing_data || cd.playing_audio;
     if (is_playing) {
-        if (cd.playing_data && geo_get_system() == SYSTEM_CDZ)
+        unsigned speed2x = ngsys.sys == SYSTEM_CDZ || ngsys.sys == SYSTEM_CDU;
+        if (cd.playing_data && speed2x)
             cd_sector_rate = CD_SECTOR_RATE_2X;
         else
             cd_sector_rate = CD_SECTOR_RATE_1X;
@@ -1963,6 +1964,19 @@ void geo_cd_init(void) {
     memset(z80_ram_cd, 0, SIZE_64K);
     memset(fix_ram, 0, SIZE_128K);
     memset(backup_ram, 0, SIZE_8K);
+
+    // Default the Universe BIOS to CDZ mode
+    if (ngsys.sys == SYSTEM_CDU) {
+        backup_ram[0] = 0x56;
+        backup_ram[1] = 0x32;
+        backup_ram[2] = 0x02;
+        switch (ngsys.region) { // Try to use the correct region
+            default: case REGION_US: backup_ram[3] = 0x10; break;
+            case REGION_JP: backup_ram[3] = 0x00; break;
+            case REGION_EU: backup_ram[3] = 0x20; break;
+            case REGION_AS: backup_ram[3] = 0x30; break; // Brazil?
+        }
+    }
 
     lc8951_reset();
     cd_comm_reset();
