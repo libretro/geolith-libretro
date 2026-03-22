@@ -946,6 +946,7 @@ void retro_init(void) {
 
 void retro_deinit(void) {
     geo_mixer_deinit();
+    geo_deinit();
 
     free(vbuf);
     vbuf = NULL;

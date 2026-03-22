@@ -189,6 +189,7 @@ unsigned geo_cartram_present(void);
 
 void geo_exec(void);
 void geo_init(void);
+void geo_deinit(void);
 void geo_reset(int);
 
 void geo_log_set_callback(void (*)(int, const char *, ...));
