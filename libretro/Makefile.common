@@ -4,7 +4,8 @@ INCFLAGS := -I$(CORE_DIR)/deps -I$(CORE_DIR)/deps/libretro-common/include \
 
 ifeq ($(platform),unix)
 LIBS += -lm -lz -lzstd
-FLAGS += -DHAVE_ZLIB -DHAVE_7ZIP -DHAVE_DR_FLAC -DHAVE_FLAC -DHAVE_ZSTD
+FLAGS += -DHAVE_ZLIB -DHAVE_7ZIP -DHAVE_DR_FLAC -DHAVE_FLAC -DHAVE_ZSTD \
+	-DHAVE_CHDR
 endif
 
 SOURCES_C := \

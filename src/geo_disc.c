@@ -35,8 +35,11 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "geo.h"
 #include "geo_disc.h"
-#include "geo_chd.h"
 #include "geo_cue.h"
+
+#ifdef HAVE_CHDR
+#include "geo_chd.h"
+#endif
 
 // Function pointer dispatch — set once at open, zero overhead per call
 static int (*fn_read_sector)(uint32_t, uint8_t*);
@@ -49,21 +52,26 @@ static uint32_t (*fn_leadout)(void);
 static void (*fn_close)(void);
 
 static int detect_backend(const char *path) {
+#ifdef HAVE_CHDR
+    // Convert extension to lower case, then compare
     const char *extptr = strrchr(path, '.');
+    if (!extptr)
+        return 0;
 
-    // Convert extension to lower case
     char ext[5];
     snprintf(ext, sizeof(ext), "%s", extptr);
     for (size_t i = 0; i < strlen(extptr); ++i)
         ext[i] = tolower(ext[i]);
 
-    if (!ext)
-        return 0;
     if (!strcmp(ext, ".chd"))
         return 1;
     if (!strcmp(ext, ".cue"))
         return 2;
     return 0;
+#else
+    (void)path;
+    return 2; // BIN/CUE only
+#endif
 }
 
 static void clear_dispatch(void) {
@@ -85,9 +93,10 @@ static uint32_t stub_track_u32(unsigned t) { (void)t; return 0; }
 static uint32_t stub_leadout(void) { return 0; }
 
 int geo_disc_open(const char *path) {
-    int backend = detect_backend(path);
     int ok = 0;
+    int backend = detect_backend(path);
 
+#ifdef HAVE_CHDR
     switch (backend) {
         case 1: // CHD
             ok = geo_chd_open(path);
@@ -119,9 +128,22 @@ int geo_disc_open(const char *path) {
             geo_log(GEO_LOG_ERR, "Unsupported disc format: %s\n", path);
             break;
     }
+#else
+    (void)backend;
+    ok = geo_cue_open(path);
+    if (ok) {
+        fn_read_sector = geo_cue_read_sector;
+        fn_read_audio = geo_cue_read_audio;
+        fn_num_tracks = geo_cue_num_tracks;
+        fn_track_is_audio = geo_cue_track_is_audio;
+        fn_track_start = geo_cue_track_start;
+        fn_track_frames = geo_cue_track_frames;
+        fn_leadout = geo_cue_leadout;
+        fn_close = geo_cue_close;
+    }
+#endif
 
-    if (!ok) {
-        // Set stubs so callers don't need NULL checks
+    if (!ok) { // Set stubs so callers don't need NULL checks
         fn_read_sector = stub_read;
         fn_read_audio = stub_read_audio;
         fn_num_tracks = stub_num_tracks;
