@@ -334,10 +334,6 @@ static inline uint16_t read16(uint8_t *ptr, uint32_t addr) {
     return (ptr[addr] << 8) | ptr[addr + 1];
 }
 
-static inline void write08(uint8_t *ptr, uint32_t addr, uint8_t data) {
-    ptr[addr] = data;
-}
-
 static inline void write16(uint8_t *ptr, uint32_t addr, uint16_t data) {
     ptr[addr + 1] = data & 0xff;
     ptr[addr] = data >> 8;
