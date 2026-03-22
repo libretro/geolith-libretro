@@ -329,17 +329,27 @@ int geo_savedata_load(unsigned datatype, const char *filename) {
 
     switch (datatype) {
         case GEO_SAVEDATA_NVRAM: {
-            if (geo_get_system() == SYSTEM_AES)
+            if (ngsys.sys == SYSTEM_AES || ngsys.cdmode)
                 return 2;
             dataptr = geo_mem_ptr(GEO_MEMTYPE_NVRAM, &datasize);
             break;
         }
         case GEO_SAVEDATA_CARTRAM: {
+            if (!ngsys.sram_present || ngsys.cdmode)
+                return 2;
             dataptr = geo_mem_ptr(GEO_MEMTYPE_CARTRAM, &datasize);
             break;
         }
         case GEO_SAVEDATA_MEMCARD: {
+            if (ngsys.cdmode)
+                return 2;
             dataptr = geo_mem_ptr(GEO_MEMTYPE_MEMCARD, &datasize);
+            break;
+        }
+        case GEO_SAVEDATA_CDBRAM: {
+            if (!ngsys.cdmode)
+                return 2;
+            dataptr = geo_mem_ptr(GEO_MEMTYPE_CDBRAM, &datasize);
             break;
         }
         default: return 2;
@@ -377,19 +387,27 @@ int geo_savedata_save(unsigned datatype, const char *filename) {
 
     switch (datatype) {
         case GEO_SAVEDATA_NVRAM: {
-            if (geo_get_system() == SYSTEM_AES)
+            if (ngsys.sys == SYSTEM_AES || ngsys.cdmode)
                 return 2;
             dataptr = geo_mem_ptr(GEO_MEMTYPE_NVRAM, &datasize);
             break;
         }
         case GEO_SAVEDATA_CARTRAM: {
-            if (!ngsys.sram_present)
+            if (!ngsys.sram_present || ngsys.cdmode)
                 return 2;
             dataptr = geo_mem_ptr(GEO_MEMTYPE_CARTRAM, &datasize);
             break;
         }
         case GEO_SAVEDATA_MEMCARD: {
+            if (ngsys.cdmode)
+                return 2;
             dataptr = geo_mem_ptr(GEO_MEMTYPE_MEMCARD, &datasize);
+            break;
+        }
+        case GEO_SAVEDATA_CDBRAM: {
+            if (!ngsys.cdmode)
+                return 2;
+            dataptr = geo_mem_ptr(GEO_MEMTYPE_CDBRAM, &datasize);
             break;
         }
         default: return 2;
@@ -666,6 +684,10 @@ const void* geo_mem_ptr(unsigned type, size_t *sz) {
         case GEO_MEMTYPE_DYNFIX: {
             if (sz) *sz = SIZE_128K;
             return geo_m68k_dynfix_ptr();
+        }
+        case GEO_MEMTYPE_CDBRAM: {
+            if (sz) *sz = SIZE_8K;
+            return geo_cd_backup_ram_ptr();
         }
     }
 

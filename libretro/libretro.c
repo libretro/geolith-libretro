@@ -1247,24 +1247,22 @@ bool retro_load_game(const struct retro_game_info *info) {
     if (!environ_cb(RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY, &savedir) || !savedir)
         return false;
 
-    if (!cd_mode) {
-        // Load any existing saved data (cartridge mode)
-        char savename[292];
-        char *fext[] = { "nv", "srm", "mcr" };
+    // Load any existing saved data
+    char savename[292];
+    char *fext[] = { "nv", "srm", "mcr", "brm" };
 
-        for (unsigned i = 0; i < GEO_SAVEDATA_MAX; ++i) {
-            snprintf(savename, sizeof(savename), "%s%c%s.%s",
-                savedir, pss, gamename, fext[i]);
+    for (unsigned i = 0; i < GEO_SAVEDATA_MAX; ++i) {
+        snprintf(savename, sizeof(savename), "%s%c%s.%s",
+            savedir, pss, gamename, fext[i]);
 
-            int savestat = vfs ?
-                geo_savedata_load_vfs(i, (const char*)savename) :
-                geo_savedata_load(i, (const char*)savename);
+        int savestat = vfs ?
+            geo_savedata_load_vfs(i, (const char*)savename) :
+            geo_savedata_load(i, (const char*)savename);
 
-            if (savestat == 1)
-                log_cb(RETRO_LOG_DEBUG, "Loaded: %s\n", savename);
-            else if (savestat != 2)
-                log_cb(RETRO_LOG_DEBUG, "Load Failed: %s\n", savename);
-        }
+        if (savestat == 1)
+            log_cb(RETRO_LOG_DEBUG, "Loaded: %s\n", savename);
+        else if (savestat != 2)
+            log_cb(RETRO_LOG_DEBUG, "Load Failed: %s\n", savename);
     }
 
     geo_input_set_callback(0, &geo_input_poll_js);
@@ -1292,22 +1290,6 @@ bool retro_load_game(const struct retro_game_info *info) {
         environ_cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, input_desc_js);
     }
 
-    if (cd_mode) {
-        // Load CD backup RAM from disk
-        char savename[292];
-        snprintf(savename, sizeof(savename), "%s%c%s.srm",
-            savedir, pss, gamename);
-
-        RFILE *sf = filestream_open(savename,
-            RETRO_VFS_FILE_ACCESS_READ, RETRO_VFS_FILE_ACCESS_HINT_NONE);
-        if (sf) {
-            void *bram = (void*)geo_cd_backup_ram_ptr();
-            filestream_read(sf, bram, SIZE_8K);
-            filestream_close(sf);
-            log_cb(RETRO_LOG_DEBUG, "Loaded CD backup RAM: %s\n", savename);
-        }
-    }
-
     geo_reset(1);
 
     // Expose memory maps for RetroArch cheats/achievements
@@ -1331,44 +1313,28 @@ bool retro_load_game(const struct retro_game_info *info) {
 }
 
 void retro_unload_game(void) {
+    // Save NVRAM, Cartridge RAM, Memory Card, and CD Backup RAM
+    char savename[292];
+    char *fext[] = { "nv", "srm", "mcr", "brm" };
+
+    for (unsigned i = 0; i < GEO_SAVEDATA_MAX; ++i) {
+        snprintf(savename, sizeof(savename), "%s%c%s.%s",
+            savedir, pss, gamename, fext[i]);
+
+        int savestat = vfs ?
+            geo_savedata_save_vfs(i, (const char*)savename) :
+            geo_savedata_save(i, (const char*)savename);
+
+        if (savestat == 1)
+            log_cb(RETRO_LOG_DEBUG, "Saved: %s\n", savename);
+        else if (savestat != 2)
+            log_cb(RETRO_LOG_DEBUG, "Save Failed: %s\n", savename);
+    }
+
     if (cd_mode) {
-        // Save CD backup RAM to disk
-        char savename[292];
-        snprintf(savename, sizeof(savename), "%s%c%s.srm",
-            savedir, pss, gamename);
-
-        const void *bram = geo_cd_backup_ram_ptr();
-        RFILE *sf = filestream_open(savename,
-            RETRO_VFS_FILE_ACCESS_WRITE,
-            RETRO_VFS_FILE_ACCESS_HINT_NONE);
-        if (sf) {
-            filestream_write(sf, bram, SIZE_8K);
-            filestream_close(sf);
-            log_cb(RETRO_LOG_DEBUG, "Saved CD backup RAM: %s\n", savename);
-        }
-
         // CD mode: close disc and cleanup CD subsystem
         geo_disc_close();
         geo_cd_deinit();
-    }
-    else {
-        // Cartridge mode: save NVRAM, Cartridge RAM, and Memory Card
-        char savename[292];
-        char *fext[] = { "nv", "srm", "mcr" };
-
-        for (unsigned i = 0; i < GEO_SAVEDATA_MAX; ++i) {
-            snprintf(savename, sizeof(savename), "%s%c%s.%s",
-                savedir, pss, gamename, fext[i]);
-
-            int savestat = vfs ?
-                geo_savedata_save_vfs(i, (const char*)savename) :
-                geo_savedata_save(i, (const char*)savename);
-
-            if (savestat == 1)
-                log_cb(RETRO_LOG_DEBUG, "Saved: %s\n", savename);
-            else if (savestat != 2)
-                log_cb(RETRO_LOG_DEBUG, "Save Failed: %s\n", savename);
-        }
     }
 
     if (romdata)
