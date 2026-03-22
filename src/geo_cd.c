@@ -354,30 +354,16 @@ static inline uint8_t from_bcd(uint8_t val) {
     return ((val >> 4) * 10) + (val & 0x0f);
 }
 
-static void protection_bypass(uint8_t *sector, size_t len) {
-    /* This is a somewhat dirty hack for CDZ protection which hijacks a sector
-       read containing the "NEO-GEO\0" signature and some extra data. When the
-       signature is found, the relevent data is modified to pass the protection
-       checks.
-       https://wiki.neogeodev.org/index.php/Copy_protection
-
-       The correct way to do this involves Query TOC/position info subcommand 2
+static void protection_bypass(uint8_t *sector) {
+    /* https://wiki.neogeodev.org/index.php/Copy_protection
+       This hijacks the read of CPY.TXT, which starts with the text "Copyright
+       by SNK". The character change corrupts the checksum, which passes the
+       first check, and also converts the BEQ instruction to a BNE to pass
+       the second check.
     */
-    const uint8_t sig[] = { 'N', 'E', 'O', '-', 'G', 'E', 'O', 0x00 };
-
-    for (size_t i = 0; i + sizeof(sig) < len; i++) {
-        if (memcmp(sector + i, sig, sizeof(sig)) == 0) {
-            size_t code_start = i + 0x0A;
-            int patched = 0;
-            for (size_t j = code_start; j < len && patched < 2; j++) {
-                if (sector[j] == 0x67) {
-                    sector[j] = 0x66;
-                    patched++;
-                }
-            }
-            protection_bypassed = 1;
-            return;
-        }
+    if (sector[64] == 'g' && !memcmp(sector, "Copyright by SNK", 16)) {
+        sector[64] = 'f';
+        protection_bypassed = 1;
     }
 }
 
@@ -522,7 +508,7 @@ static void lc8951_sector_decoded(void) {
     uint8_t sector[GEO_DISC_DATA_SIZE];
     geo_disc_read_sector(cd.play_lba, sector);
     if (!protection_bypassed)
-        protection_bypass(sector, GEO_DISC_DATA_SIZE);
+        protection_bypass(sector);
     lc_buffer_write((uint16_t)(lc.wal + 4), sector, GEO_DISC_DATA_SIZE);
 
     // PTL = WAL (snapshot before advancing — tells BIOS where sector starts)
