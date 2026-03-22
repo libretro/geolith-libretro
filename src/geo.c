@@ -52,7 +52,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define MCYC_PER_FRAME (MCYC_PER_LINE * 264) // 405504
 
 #define SIZE_STATE_CART 485301
-#define SIZE_STATE_DISC 7835612
+#define SIZE_STATE_DISC 7835613
 
 // Log callback
 void (*geo_log)(int, const char *, ...);
@@ -88,7 +88,7 @@ unsigned irq_timer_level = IRQ_TIMER;
 
 // Watchdog Frames
 static unsigned watchdog_frames = 8;
-static unsigned watchdog_enabled = 0; // TODO: Add to state for CD systems?
+static uint8_t watchdog_enabled = 0;
 
 // Set the log callback
 void geo_log_set_callback(void (*cb)(int, const char *, ...)) {
@@ -532,8 +532,10 @@ int geo_state_load_raw(const void *sstate) {
     geo_ymfm_state_load(st);
     geo_z80_state_load(st);
 
-    if (ngsys.cdmode)
+    if (ngsys.cdmode) {
+        watchdog_enabled = geo_serial_pop8(st);
         geo_cd_state_load(st);
+    }
 
     return 1;
 }
@@ -607,8 +609,10 @@ const void* geo_state_save_raw(void) {
     geo_ymfm_state_save(state);
     geo_z80_state_save(state);
 
-    if (ngsys.cdmode)
+    if (ngsys.cdmode) {
+        geo_serial_push8(state, watchdog_enabled);
         geo_cd_state_save(state);
+    }
 
     return (const void*)state;
 }
