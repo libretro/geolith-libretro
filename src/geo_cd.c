@@ -356,14 +356,14 @@ static inline uint8_t from_bcd(uint8_t val) {
 
 static void protection_bypass(uint8_t *sector, size_t len) {
     /* This is a somewhat dirty hack for CDZ protection which hijacks a sector
-       read containing the "NEO-GEO" signature and some extra data. When the
+       read containing the "NEO-GEO\0" signature and some extra data. When the
        signature is found, the relevent data is modified to pass the protection
        checks.
        https://wiki.neogeodev.org/index.php/Copy_protection
 
        The correct way to do this involves Query TOC/position info subcommand 2
     */
-    const uint8_t sig[] = { 'N', 'E', 'O', '-', 'G', 'E', 'O' };
+    const uint8_t sig[] = { 'N', 'E', 'O', '-', 'G', 'E', 'O', 0x00 };
 
     for (size_t i = 0; i + sizeof(sig) < len; i++) {
         if (memcmp(sector + i, sig, sizeof(sig)) == 0) {
