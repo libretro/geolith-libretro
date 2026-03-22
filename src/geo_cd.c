@@ -638,10 +638,26 @@ static void cd_comm_process_command(void) {
                 }
                 case 0x02: { // Current track
                     unsigned track = find_track_for_lba(cd.play_lba);
-                    uint8_t is_data = !geo_disc_track_is_audio(track);
+                    int is_data = !geo_disc_track_is_audio(track);
                     cd.status[0] = cd.drive_status | 0x02;
                     cd.status[1] = to_bcd(track);
-                    cd.status[2] = to_bcd(1); // index
+
+                    /* Return computed index based on absolute MSF position
+                       when on the data track. This should satisfy in-game
+                       protection checks, though this is poorly documented.
+                    */
+                    if (is_data) {
+                        uint8_t pm, ps, pf;
+                        geo_disc_lba_to_msf(cd.play_lba + 150, &pm, &ps, &pf);
+                        unsigned idx = ((pm * 60) + (ps + 4)) / 4;
+                        if (idx > 99)
+                            idx = 99;
+                        cd.status[2] = to_bcd(idx);
+                    }
+                    else {
+                        cd.status[2] = to_bcd(1);
+                    }
+
                     cd.status[3] = 0;
                     cd.status[4] = is_data ? 0x40 : 0x00;
                     break;
