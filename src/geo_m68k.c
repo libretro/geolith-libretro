@@ -1339,29 +1339,28 @@ void geo_m68k_interrupt(unsigned level) {
 int geo_m68k_int_ack(int level) {
     if (ngsys.cdmode) {
         /* CD Mode Custom Vectoring
-           Level 1: VBL vector at offset 0x68 (vector 26)
+           Level 1: VBLANK vector at offset 0x68 (vector 26)
            Level 2: CD vector at offset 0x54 or 0x58
-           Level 3: Timer/HBL vector at offset 0x64 (vector 25)
+           Level 3: Timer/HBLANK vector at offset 0x64 (vector 25)
         */
         switch (level) {
             case 1:
                 m68k_set_virq(1, 0);
-                return 0x68 / 4; // VBL
+                return 0x68 / 4; // VBLANK
             case 2: {
-                extern uint8_t cd_pending_irq;
-                // Decoder IRQ (0x54) has priority over communication (0x58)
-                uint32_t vec;
-                if (cd_pending_irq & 0x01) // CD_INT_DECODER
-                    vec = 0x54;
-                else
-                    vec = 0x58;
-
                 m68k_set_virq(2, 0);
-                return vec / 4;
+                if (geo_cd_irq_pending() & CD_INT_DECODER) {
+                    geo_cd_irq_clear(CD_INT_DECODER);
+                    return 0x54 / 4; // Vector 21
+                }
+                else {
+                    geo_cd_irq_clear(CD_INT_COMMUNICATION);
+                    return 0x58 / 4; // Vector 22
+                }
             }
             case 3:
                 m68k_set_virq(3, 0);
-                return 0x64 / 4; // Timer/HBL
+                return 0x64 / 4; // Timer/HBLANK
         }
     }
     return M68K_INT_ACK_AUTOVECTOR;

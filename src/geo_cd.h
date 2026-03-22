@@ -34,6 +34,14 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 // CD IRQ level (M68K interrupt level 2)
 #define IRQ_CD      0x02
 
+// Pending interrupt sources
+#define CD_INT_DECODER       0x01
+#define CD_INT_COMMUNICATION 0x02
+
+void geo_cd_irq_set(uint8_t bits);
+void geo_cd_irq_clear(uint8_t bits);
+uint8_t geo_cd_irq_pending(void);
+
 // CD communication vector (0x54=decoder, 0x58=communication)
 extern uint32_t cd_irq_vector;
 

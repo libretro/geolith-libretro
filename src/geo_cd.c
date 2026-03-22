@@ -197,31 +197,29 @@ static uint16_t irq_mask2 = 0;         // FF0004: VBL interrupt mask (VITAL)
 static int vbl_pending = 0;            // Latched VBL when irq_mask2 wasn't ready
 uint32_t cd_irq_vector = 0;            // CD interrupt vector (0x54 or 0x58)
 
-// Pending CD interrupt sources
-#define CD_INT_DECODER      0x01
-#define CD_INT_COMMUNICATION 0x02
-uint8_t cd_pending_irq = 0;
+// Interrupt handling
+static uint8_t cd_pending_irq = 0;
 
 // Re-evaluate CD IRQ level and vector based on pending sources
-// Decoder has higher priority than communication (checked last = wins)
 static void cd_update_interrupts(void) {
-    int level = 0;
-
-    // Priority order: decoder checked first, communication
-    // checked last (communication wins when both pending)
-    if (cd_pending_irq & CD_INT_DECODER) {
-        level = 2;
-        cd_irq_vector = 0x54;
-    }
-    if (cd_pending_irq & CD_INT_COMMUNICATION) {
-        level = 2;
-        cd_irq_vector = 0x58;
-    }
-
-    if (level)
+    if (cd_pending_irq)
         geo_m68k_interrupt(IRQ_CD);
     else
         m68k_set_virq(IRQ_CD, 0);
+}
+
+void geo_cd_irq_set(uint8_t bits) {
+    cd_pending_irq |= bits;
+    cd_update_interrupts();
+}
+
+void geo_cd_irq_clear(uint8_t bits) {
+    cd_pending_irq &= ~bits;
+    cd_update_interrupts();
+}
+
+uint8_t geo_cd_irq_pending(void) {
+    return cd_pending_irq;
 }
 
 // Bit-reverse table for CDDA sample registers
@@ -1189,6 +1187,12 @@ static void cd_reg_write_8(uint32_t addr, uint8_t val) {
                 cd_irq_mask &= ~0x10;
                 cd_pending_irq &= ~CD_INT_COMMUNICATION;
             }
+            if (val & 0x08) {
+                geo_log(GEO_LOG_WRN, "IRQ Ack Vector 0x5c/23\n");
+            }
+            if (val & 0x04) {
+                geo_log(GEO_LOG_WRN, "IRQ Ack Vector 0x60/24\n");
+            }
             cd_update_interrupts();
             return;
         }
@@ -1759,7 +1763,7 @@ void geo_cd_tick(unsigned mcycles) {
                 (lc.ifctrl & LC_IFCTRL_DECIEN) &&
                 !(lc.ifstat & LC_IFSTAT_DECI)) {
                 cd_irq_mask |= 0x20;
-                cd_pending_irq |= CD_INT_DECODER;
+                geo_cd_irq_set(CD_INT_DECODER);
                 sector_decoded_this_frame = 1;
             }
 
@@ -1769,11 +1773,8 @@ void geo_cd_tick(unsigned mcycles) {
         // Communication IRQ (fires every tick)
         if ((irq_mask1 & 0x50) == 0x50 && cd_irq_enabled) {
             cd_irq_mask |= 0x10;
-            cd_pending_irq |= CD_INT_COMMUNICATION;
+            geo_cd_irq_set(CD_INT_COMMUNICATION);
         }
-
-        // Re-evaluate interrupts after setting all pending sources
-        cd_update_interrupts();
     }
 }
 
