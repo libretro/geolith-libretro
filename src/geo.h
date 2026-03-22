@@ -52,9 +52,10 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define SYSTEM_AES  0x00 // Console
 #define SYSTEM_MVS  0x01 // Arcade
 #define SYSTEM_UNI  0x02 // Universe BIOS
-#define SYSTEM_CD   0x03 // CD
-#define SYSTEM_CDZ  0x04 // CDZ
-#define SYSTEM_CDU  0x05 // CD Universe BIOS
+#define SYSTEM_CDF  0x03 // CD Front Loader
+#define SYSTEM_CDT  0x04 // CD Top Loader
+#define SYSTEM_CDZ  0x05 // CDZ
+#define SYSTEM_CDU  0x06 // CD Universe BIOS
 
 #define REGION_US   0x00 // USA
 #define REGION_JP   0x01 // Japan

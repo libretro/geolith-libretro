@@ -1157,7 +1157,7 @@ static uint16_t cd_reg_read_16(uint32_t addr) {
             }
 
             unsigned mech = 0x0000; // 0 = Top Loader/CDZ, 1 = Front Loader
-            unsigned tray = ngsys.sys == SYSTEM_CD ? 0x1000 : 0x0000;
+            unsigned tray = ngsys.sys <= SYSTEM_CDT ? 0x1000 : 0x0000;
             return (uint16_t)(nat | mech | tray) | 0xc000;
         }
 

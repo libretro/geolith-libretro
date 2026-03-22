@@ -118,7 +118,7 @@ int geo_get_region(void) {
 // Set the system to be emulated
 void geo_set_system(int s) {
     ngsys.sys = s;
-    ngsys.cdmode = s >= SYSTEM_CD;
+    ngsys.cdmode = s >= SYSTEM_CDF;
 }
 
 // Get the system currently being emulated
@@ -196,7 +196,11 @@ static int geo_bios_load(mz_zip_archive *zip_archive) {
             biosrom = "uni-bios_4_0.rom";
             break;
         }
-        case SYSTEM_CD: {
+        case SYSTEM_CDF: {
+            biosrom = "front-sp1.bin"; // Front Loader
+            break;
+        }
+        case SYSTEM_CDT: {
             biosrom = "top-sp1.bin"; // Top Loader
             break;
         }
@@ -225,7 +229,8 @@ static int geo_bios_load(mz_zip_archive *zip_archive) {
     // Load L0 ROM
     romdata.l0 = mz_zip_reader_extract_file_to_heap(zip_archive,
         "000-lo.lo", &(romdata.l0sz), 0);
-    if (romdata.l0 == NULL && ngsys.sys != SYSTEM_CD) {
+    if (romdata.l0 == NULL &&
+        (ngsys.sys != SYSTEM_CDF && ngsys.sys != SYSTEM_CDT)) {
         mz_zip_reader_end(zip_archive);
         geo_bios_unload();
         geo_log(GEO_LOG_ERR, "Failed to load 000-lo.lo from BIOS archive!\n");
@@ -261,7 +266,7 @@ static int geo_bios_load(mz_zip_archive *zip_archive) {
 }
 
 static int geo_bios_load_aux(mz_zip_archive *zip_archive) {
-    if (ngsys.sys == SYSTEM_CD) {
+    if (ngsys.sys == SYSTEM_CDF || ngsys.sys == SYSTEM_CDT) {
         // Load L0 ROM, not included in neocd.zip, but in neocdz.zip
         romdata.l0 = mz_zip_reader_extract_file_to_heap(zip_archive,
             "000-lo.lo", &(romdata.l0sz), 0);

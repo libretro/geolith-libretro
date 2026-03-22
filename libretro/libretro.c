@@ -637,8 +637,10 @@ static void check_variables(bool first_run) {
         var.value = NULL;
 
         if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
-            if (!strcmp(var.value, "cd"))
-                cd_systype = SYSTEM_CD;
+            if (!strcmp(var.value, "cd_front"))
+                cd_systype = SYSTEM_CDF;
+            if (!strcmp(var.value, "cd_top"))
+                cd_systype = SYSTEM_CDT;
             else if (!strcmp(var.value, "cdz"))
                 cd_systype = SYSTEM_CDZ;
             else if (!strcmp(var.value, "cdz_unibios"))
@@ -977,7 +979,7 @@ void retro_get_system_av_info(struct retro_system_av_info *info) {
             .fps = 60, .sample_rate = SAMPLERATE_RESAMP
         };
     }
-    else if (systype >= SYSTEM_CD) {
+    else if (systype >= SYSTEM_CDF) {
         info->timing = (struct retro_system_timing) {
             .fps = FRAMERATE_AES, .sample_rate = SAMPLERATE_RESAMP
         };
@@ -1154,7 +1156,7 @@ bool retro_load_game(const struct retro_game_info *info) {
     char biospath[256];
     if (cd_mode) {
         const char *biosname;
-        if (systype == SYSTEM_CD)
+        if (systype == SYSTEM_CDF || systype == SYSTEM_CDT)
             biosname = "neocd.zip";
         else
             biosname = "neocdz.zip";
@@ -1171,7 +1173,7 @@ bool retro_load_game(const struct retro_game_info *info) {
     }
 
     // Neo Geo CD needs to load "000-lo.lo" from neocdz.zip
-    if (systype == SYSTEM_CD) {
+    if (systype == SYSTEM_CDF || systype == SYSTEM_CDT) {
         snprintf(biospath, sizeof(biospath), "%s%cneocdz.zip", sysdir, pss);
         if (!geo_bios_load_file_aux(biospath)) {
             log_cb(RETRO_LOG_ERROR, "Failed to load bios at: %s\n", biospath);
