@@ -76,10 +76,26 @@ void ymfm_sync_check_interrupts(void) {
 }
 
 void ymfm_set_timer(uint32_t tnum, int32_t duration) {
-    if (duration >= 0)
-        timer[tnum] += (duration / DIVISOR);
-    else // -1 means disabled
+    if (duration >= 0) {
+        /* Convert from YM2610 clocks to ticks based on the divisor. Ensure
+           a minimum of 1 tick — short timer periods that divide to 0 would
+           otherwise cause the timer to never fire again after reload.
+        */
+        int32_t ticks = duration / DIVISOR;
+        if (ticks == 0)
+            ticks = 1;
+
+        /* If the timer was disabled (-1), set it directly rather than
+           accumulating onto the negative value.
+        */
+        if (timer[tnum] < 0)
+            timer[tnum] = ticks;
+        else
+            timer[tnum] += ticks;
+    }
+    else { // Negative duration (-1) means the timer is disabled
         timer[tnum] = duration;
+    }
 }
 
 void ymfm_set_busy_end(uint32_t clocks) {
