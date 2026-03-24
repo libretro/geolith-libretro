@@ -638,13 +638,15 @@ static void cd_comm_process_command(void) {
                     cd.status[0] = cd.drive_status | 0x02;
                     cd.status[1] = to_bcd(track);
 
-                    /* Return computed index based on absolute MSF position
-                       when on the data track. This should satisfy in-game
-                       protection checks, though this is poorly documented.
+                    /* Return a computed index when on the data track. The
+                       index is derived from the current position using the raw
+                       internal LBA, matching what the CD drive's sub-Q channel
+                       would report. This satisfies in-game protection checks
+                       performed during gameplay.
                     */
                     if (is_data) {
                         uint8_t pm, ps, pf;
-                        geo_disc_lba_to_msf(cd.play_lba + 150, &pm, &ps, &pf);
+                        geo_disc_lba_to_msf(cd.play_lba, &pm, &ps, &pf);
                         unsigned idx = ((pm * 60) + (ps + 4)) / 4;
                         if (idx > 99)
                             idx = 99;
