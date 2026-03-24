@@ -59,7 +59,7 @@ static romdata_t *romdata = NULL;
 static uint8_t vectable = 0;
 
 // Transfer area (0xE00000) configuration
-static uint8_t transfer_area = 0;      // 0=SPR, 1=PCM, 4=Z80, 5=FIX
+static uint8_t reg_transarea = 0;      // 0=SPR, 1=PCM, 4=Z80, 5=FIX
 static uint8_t spr_bank = 0;           // SPR bank (0-3, 1MB each)
 static uint8_t pcm_bank = 0;           // PCM bank (0-1, 512K each)
 
@@ -71,6 +71,7 @@ static uint8_t reg_envideo = 0;
 // Bus request states
 static uint8_t busreq_spr = 0;
 static uint8_t busreq_pcm = 0;
+static uint8_t busreq_z80 = 0;
 static uint8_t busreq_fix = 0;
 
 // Z80 reset/enable control
@@ -876,8 +877,8 @@ static int cd_dma_resolve_dest(uint32_t address, uint8_t **dst_ptr, uint32_t *ds
         *dst_mask = 0x1fff; // 8K palette entries (16KB / 2)
         return DMA_DEST_PALETTE;
     } else if (address >= 0xe00000 && address <= 0xefffff) {
-        // Mapped area — route based on transfer_area register
-        switch (transfer_area) {
+        // Mapped area — route based on reg_transarea register
+        switch (reg_transarea) {
             case 0: // SPR
                 *dst_ptr = spr_dram + (spr_bank * SIZE_1M);
                 *dst_mask = SIZE_1M - 1;
@@ -911,7 +912,7 @@ static void dma_write_word(uint8_t *ptr, uint32_t mask, uint32_t *offset,
                            uint16_t data, int dest_type) {
     switch (dest_type) {
         case DMA_DEST_MAPPED:
-            switch (transfer_area) {
+            switch (reg_transarea) {
                 case 0: { // SPR - big-endian word write
                     uint32_t addr = *offset & (mask & ~1u);
                     ptr[addr] = (data >> 8) & 0xff;
@@ -949,7 +950,7 @@ static void cd_dma_execute(void) {
 
     int dest_type = cd_dma_resolve_dest(dma.dst, &dst_ptr, &dst_mask);
     if (!dst_ptr) {
-        geo_log(GEO_LOG_WRN, "DMA to unknown address: %06x area=%u\n", dma.dst, transfer_area);
+        geo_log(GEO_LOG_WRN, "DMA to unknown address: %06x area=%u\n", dma.dst, reg_transarea);
         dma.enabled = 0;
         return;
     }
@@ -1230,7 +1231,7 @@ static void cd_reg_write_8(uint32_t addr, uint8_t val) {
             return;
 
         case 0x0105: // Transfer area select
-            transfer_area = val & 0x07;
+            reg_transarea = val & 0x07;
             return;
 
         case 0x0111: // SPR enable/disable
@@ -1248,7 +1249,7 @@ static void cd_reg_write_8(uint32_t addr, uint8_t val) {
 
         case 0x0121: busreq_spr = 1; return;
         case 0x0123: busreq_pcm = 1; return;
-        case 0x0127: geo_z80_busreq(1); return;
+        case 0x0127: busreq_z80 = 1; geo_z80_busreq(1); return;
         case 0x0129: busreq_fix = 1; return;
 
         case 0x0131: busreq_spr = 0; return;
@@ -1256,7 +1257,7 @@ static void cd_reg_write_8(uint32_t addr, uint8_t val) {
 
         case 0x0141: busreq_spr = 0; return; // SPR bus release
         case 0x0143: busreq_pcm = 0; return; // PCM bus release
-        case 0x0147: geo_z80_busreq(0); return; // Z80 bus release
+        case 0x0147: busreq_z80 = 0; geo_z80_busreq(0); return; // Z80 release
         case 0x0149: busreq_fix = 0; return; // FIX bus release
 
         case 0x0163: { // CD command write
@@ -1396,21 +1397,23 @@ static void cd_reg_write_16(uint32_t addr, uint16_t val) {
 static uint8_t transfer_read_8(uint32_t addr) {
     addr &= 0xfffff;
 
-    switch (transfer_area) {
+    switch (reg_transarea) {
         case 0: // SPR
-            return spr_dram[(spr_bank * SIZE_1M) + (addr & (SIZE_1M - 1))];
+            if (busreq_spr)
+                return spr_dram[(spr_bank * SIZE_1M) + (addr & (SIZE_1M - 1))];
+            break;
         case 1: // PCM - odd bytes only
-            if (addr & 1)
+            if (busreq_pcm && (addr & 1))
                 return pcm_dram[(pcm_bank * SIZE_512K) + ((addr >> 1) & (SIZE_512K - 1))];
-            return 0xff;
+            break;
         case 4: // Z80 - odd bytes only
-            if (addr & 1)
+            if (busreq_z80 && (addr & 1))
                 return z80_ram_cd[(addr >> 1) & (SIZE_64K - 1)];
-            return 0xff;
+            break;
         case 5: // FIX - odd bytes only
-            if (addr & 1)
+            if (busreq_fix && (addr & 1))
                 return fix_ram[(addr >> 1) & (SIZE_128K - 1)];
-            return 0xff;
+            break;
     }
     return 0xff;
 }
@@ -1418,22 +1421,30 @@ static uint8_t transfer_read_8(uint32_t addr) {
 static uint16_t transfer_read_16(uint32_t addr) {
     addr &= 0xfffff;
 
-    switch (transfer_area) {
+    switch (reg_transarea) {
         case 0: { // SPR - word read
             uint32_t spr_addr = (spr_bank * SIZE_1M) + (addr & (SIZE_1M - 2));
-            return (spr_dram[spr_addr] << 8) | spr_dram[spr_addr + 1];
+            if (busreq_spr)
+                return (spr_dram[spr_addr] << 8) | spr_dram[spr_addr + 1];
+            break;
         }
         case 1: { // PCM
             uint32_t pcm_addr = (pcm_bank * SIZE_512K) + ((addr >> 1) & (SIZE_512K - 1));
-            return pcm_dram[pcm_addr] | 0xff00;
+            if (busreq_pcm)
+                return pcm_dram[pcm_addr] | 0xff00;
+            break;
         }
         case 4: { // Z80
             uint32_t z_addr = (addr >> 1) & (SIZE_64K - 1);
-            return z80_ram_cd[z_addr] | 0xff00;
+            if (busreq_z80)
+                return z80_ram_cd[z_addr] | 0xff00;
+            break;
         }
         case 5: { // FIX
             uint32_t fix_addr = (addr >> 1) & (SIZE_128K - 1);
-            return fix_ram[fix_addr] | 0xff00;
+            if (busreq_fix)
+                return fix_ram[fix_addr] | 0xff00;
+            break;
         }
     }
     return 0xffff;
@@ -1442,20 +1453,22 @@ static uint16_t transfer_read_16(uint32_t addr) {
 static void transfer_write_8(uint32_t addr, uint8_t val) {
     addr &= 0xfffff;
 
-    switch (transfer_area) {
+    switch (reg_transarea) {
         case 0: // SPR
+            if (!busreq_spr)
+                return;
             spr_dram[(spr_bank * SIZE_1M) + (addr & (SIZE_1M - 1))] = val;
             return;
         case 1: // PCM - odd bytes only
-            if (addr & 1)
+            if (busreq_pcm && (addr & 1))
                 pcm_dram[(pcm_bank * SIZE_512K) + ((addr >> 1) & (SIZE_512K - 1))] = val;
             return;
         case 4: // Z80 - odd bytes only
-            if (addr & 1)
+            if (busreq_z80 && (addr & 1))
                 z80_ram_cd[(addr >> 1) & (SIZE_64K - 1)] = val;
             return;
         case 5: // FIX - odd bytes only
-            if (addr & 1)
+            if (busreq_fix && (addr & 1))
                 fix_ram[(addr >> 1) & (SIZE_128K - 1)] = val;
             return;
     }
@@ -1464,24 +1477,32 @@ static void transfer_write_8(uint32_t addr, uint8_t val) {
 static void transfer_write_16(uint32_t addr, uint16_t val) {
     addr &= 0xfffff;
 
-    switch (transfer_area) {
+    switch (reg_transarea) {
         case 0: { // SPR - word write
+            if (!busreq_spr)
+                return;
             uint32_t spr_addr = (spr_bank * SIZE_1M) + (addr & (SIZE_1M - 2));
             spr_dram[spr_addr] = val >> 8;
             spr_dram[spr_addr + 1] = val & 0xff;
             return;
         }
         case 1: { // PCM
+            if (!busreq_pcm)
+                return;
             uint32_t pcm_addr = (pcm_bank * SIZE_512K) + ((addr >> 1) & (SIZE_512K - 1));
             pcm_dram[pcm_addr] = val & 0xff;
             return;
         }
         case 4: { // Z80
+            if (!busreq_z80)
+                return;
             uint32_t z_addr = (addr >> 1) & (SIZE_64K - 1);
             z80_ram_cd[z_addr] = val & 0xff;
             return;
         }
         case 5: { // FIX
+            if (!busreq_fix)
+                return;
             uint32_t fix_addr = (addr >> 1) & (SIZE_128K - 1);
             fix_ram[fix_addr] = val & 0xff;
             return;
@@ -2005,7 +2026,7 @@ void geo_cd_deinit(void) {
 
 void geo_cd_reset(void) {
     vectable = 0;
-    transfer_area = 0;
+    reg_transarea = 0;
     spr_bank = 0;
     pcm_bank = 0;
     reg_disblspr = 0;
@@ -2081,7 +2102,7 @@ void geo_cd_state_save(uint8_t *st) {
 
     // Registers
     geo_serial_push8(st, vectable);
-    geo_serial_push8(st, transfer_area);
+    geo_serial_push8(st, reg_transarea);
     geo_serial_push8(st, spr_bank);
     geo_serial_push8(st, pcm_bank);
     geo_serial_push8(st, reg_disblspr);
@@ -2096,6 +2117,7 @@ void geo_cd_state_save(uint8_t *st) {
     // Bus request and IRQ mask state
     geo_serial_push8(st, busreq_spr);
     geo_serial_push8(st, busreq_pcm);
+    geo_serial_push8(st, busreq_z80);
     geo_serial_push8(st, busreq_fix);
     geo_serial_push16(st, irq_mask1);
     geo_serial_push16(st, irq_mask2);
@@ -2128,7 +2150,7 @@ void geo_cd_state_load(uint8_t *st) {
     geo_serial_popblk((uint8_t*)&dma, st, sizeof(dma));
 
     vectable = geo_serial_pop8(st);
-    transfer_area = geo_serial_pop8(st);
+    reg_transarea = geo_serial_pop8(st);
     spr_bank = geo_serial_pop8(st);
     pcm_bank = geo_serial_pop8(st);
     reg_disblspr = geo_serial_pop8(st);
@@ -2142,6 +2164,7 @@ void geo_cd_state_load(uint8_t *st) {
 
     busreq_spr = geo_serial_pop8(st);
     busreq_pcm = geo_serial_pop8(st);
+    busreq_z80 = geo_serial_pop8(st);
     busreq_fix = geo_serial_pop8(st);
     irq_mask1 = geo_serial_pop16(st);
     irq_mask2 = geo_serial_pop16(st);
