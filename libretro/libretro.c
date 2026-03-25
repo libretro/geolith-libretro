@@ -51,6 +51,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "streams/file_stream.h"
 
 #define SAMPLERATE_RESAMP 44100
+#define SAMPLERATE_ADJUSTED 44396 // Rate corrected for 60Hz vs ~59.19/59.60Hz
+#define SAMPLERATE_MVS 55555
+#define SAMPLERATE_AES 55943.49
 
 #if defined(_WIN32)
    static const char pss = '\\';
@@ -87,7 +90,6 @@ static int region = REGION_US;
 static int settingmode = 0;
 static int memcard = 1;
 static int memcard_wp = 0;
-static int force_int_timing = 0;
 static int freeplay = 0;
 static int fourplayer = 0;
 static int palette = 0;
@@ -698,17 +700,6 @@ static void check_variables(bool first_run) {
             else
                 settingmode = 0;
         }
-
-        // Force Integer Timing
-        var.key   = "geolith_force_int_timing";
-        var.value = NULL;
-
-        if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
-            if (!strcmp(var.value, "on"))
-                force_int_timing = 1;
-            else
-                force_int_timing = 0;
-        }
     }
 
     // CD Speed Hack
@@ -940,10 +931,7 @@ void retro_init(void) {
     geo_mixer_set_callback(geo_cb_audio);
     geo_mixer_init();
 
-    if (force_int_timing)
-        geo_mixer_set_rate(SAMPLERATE_RESAMP);
-    else
-        geo_mixer_set_raw(1); // Bypass the emulator's internal resampler
+    geo_mixer_set_raw(1); // Bypass the emulator's internal resampler
 }
 
 void retro_deinit(void) {
@@ -974,12 +962,7 @@ void retro_get_system_info(struct retro_system_info *info) {
 }
 
 void retro_get_system_av_info(struct retro_system_av_info *info) {
-    if (force_int_timing) {
-        info->timing = (struct retro_system_timing) {
-            .fps = 60, .sample_rate = SAMPLERATE_RESAMP
-        };
-    }
-    else if (systype >= SYSTEM_CDF) {
+    if (systype >= SYSTEM_CDF) {
         info->timing = (struct retro_system_timing) {
             .fps = FRAMERATE_AES, .sample_rate = SAMPLERATE_RESAMP
         };
@@ -989,7 +972,7 @@ void retro_get_system_av_info(struct retro_system_av_info *info) {
             .fps = systype == SYSTEM_MVS || systype == SYSTEM_UNI ?
                 FRAMERATE_MVS : FRAMERATE_AES,
             .sample_rate = systype == SYSTEM_MVS || systype == SYSTEM_UNI ?
-                55555 : 55943.49
+                SAMPLERATE_MVS : SAMPLERATE_AES
         };
     }
 
@@ -1140,7 +1123,7 @@ bool retro_load_game(const struct retro_game_info *info) {
             cd_mode = 1;
             systype = cd_systype;
             geo_mixer_deinit();
-            geo_mixer_set_rate(force_int_timing ? SAMPLERATE_RESAMP: 44396);
+            geo_mixer_set_rate(SAMPLERATE_ADJUSTED);
             geo_mixer_set_raw(0);
             geo_mixer_init();
             geo_cd_set_speed_hack(cd_speed_hack);
