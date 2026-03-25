@@ -29,9 +29,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
 #include <ctype.h>
 
 #define DR_FLAC_IMPLEMENTATION
@@ -82,6 +82,18 @@ static char basedir[512];
 static int flac_last_track = -1;
 static uint64_t flac_last_frame = 0;
 
+// Compare two strings ignoring case in a Jolly Good manner
+static int strjcasecmp(const char *a, const char *b, size_t n) {
+    for (size_t i = 0; i < n; ++i) {
+        int d = toupper((unsigned char)a[i]) - toupper((unsigned char)b[i]);
+        if (d)
+            return d;
+        if (!a[i])
+            return 0;
+    }
+    return 0;
+}
+
 static void set_basedir(const char *cuepath) {
     // Copy path and find last separator
     strncpy(basedir, cuepath, sizeof(basedir) - 1);
@@ -100,11 +112,11 @@ static int detect_file_type(const char *filename) {
     const char *ext = strrchr(filename, '.');
     if (!ext)
         return FTYPE_BIN;
-    if (!strcasecmp(ext, ".iso"))
+    if (!strjcasecmp(ext, ".iso", 4))
         return FTYPE_ISO;
-    if (!strcasecmp(ext, ".wav"))
+    if (!strjcasecmp(ext, ".wav", 4))
         return FTYPE_WAV;
-    if (!strcasecmp(ext, ".flac"))
+    if (!strjcasecmp(ext, ".flac", 5))
         return FTYPE_FLAC;
     return FTYPE_BIN;
 }
@@ -262,7 +274,7 @@ int geo_cue_open(const char *path) {
         if (!*p)
             continue;
 
-        if (!strncasecmp(p, "FILE ", 5)) {
+        if (!strjcasecmp(p, "FILE ", 5)) {
             // FILE "filename" BINARY/WAVE/etc.
             if (num_files >= MAX_FILES)
                 break;
@@ -305,7 +317,7 @@ int geo_cue_open(const char *path) {
             cur_file = num_files;
             num_files++;
         }
-        else if (!strncasecmp(p, "TRACK ", 6)) {
+        else if (!strjcasecmp(p, "TRACK ", 6)) {
             // TRACK NN MODE1/2352 or TRACK NN AUDIO
             if (num_tracks >= MAX_TRACKS || cur_file < 0)
                 continue;
@@ -327,7 +339,7 @@ int geo_cue_open(const char *path) {
             t->pregap = 0;
             pending_index00 = 0;
 
-            if (!strncasecmp(ttype, "AUDIO", 5)) {
+            if (!strjcasecmp(ttype, "AUDIO", 5)) {
                 t->type = GEO_DISC_TRACK_AUDIO;
                 t->sector_size = GEO_DISC_SECTOR_SIZE;
             } else {
@@ -343,7 +355,7 @@ int geo_cue_open(const char *path) {
 
             num_tracks++;
         }
-        else if (!strncasecmp(p, "INDEX ", 6)) {
+        else if (!strjcasecmp(p, "INDEX ", 6)) {
             // INDEX NN MM:SS:FF
             if (cur_track < 0)
                 continue;
@@ -401,7 +413,7 @@ int geo_cue_open(const char *path) {
                 }
             }
         }
-        else if (!strncasecmp(p, "PREGAP ", 7)) {
+        else if (!strjcasecmp(p, "PREGAP ", 7)) {
             // PREGAP MM:SS:FF — silence pregap (not in file)
             if (cur_track >= 0) {
                 tracks[cur_track].pregap = parse_msf(p + 7);
