@@ -1888,21 +1888,24 @@ static const uint8_t STOP_NOP[] = { 0x4E, 0x72, 0x20, 0x00, 0x4E, 0x71 };
 
 int geo_cd_detect_bios(uint8_t *bios, size_t sz) {
     // Validity check: first 4 bytes must be 00 10 F3 00
-    static const uint8_t valid[] = { 0x00, 0x10, 0xF3, 0x00 };
+    const uint8_t valid[] = { 0x00, 0x10, 0xF3, 0x00 };
     if (!bios_pattern(bios, sz, 0x0000, valid, 4))
         return CD_BIOS_UNKNOWN;
 
-    // Family detection from reset vector area at 0x006C
-    static const uint8_t pat_front[] = { 0x00, 0xC0, 0xC8, 0x5E };
-    static const uint8_t pat_top[]   = { 0x00, 0xC0, 0xC2, 0x22 };
-    static const uint8_t pat_cdz[]   = { 0x00, 0xC0, 0xA3, 0xE8 };
+    // Family detection
+    const uint8_t pat_front[] = { 0x00, 0xC0, 0xC8, 0x5E };
+    const uint8_t pat_top[]   = { 0x00, 0xC0, 0xC2, 0x22 };
+    const uint8_t pat_cdz[]   = { 0x00, 0xC0, 0xA3, 0xE8 };
+    const uint8_t pat_uni[]   = { 0xA4, 0x4B, 0x15, 0x2F };
 
+    if (bios_pattern(bios, sz, 0x0150, pat_uni, 4))
+        return CD_BIOS_UNI;
     if (bios_pattern(bios, sz, 0x006C, pat_cdz, 4))
         return CD_BIOS_CDZ;
-    if (bios_pattern(bios, sz, 0x006C, pat_top, 4))
-        return CD_BIOS_TOP;
     if (bios_pattern(bios, sz, 0x006C, pat_front, 4))
         return CD_BIOS_FRONT;
+    if (bios_pattern(bios, sz, 0x006C, pat_top, 4))
+        return CD_BIOS_TOP;
 
     return CD_BIOS_UNKNOWN;
 }
@@ -1911,7 +1914,7 @@ int geo_cd_detect_bios(uint8_t *bios, size_t sz) {
 static void bios_patch_speed_hack(uint8_t *bios, size_t sz, int family) {
     // Each patch replaces SUBQ.L #1,D1; BEQ.W xxxx (53 81 67 00 xx xx)
     // with STOP #0; NOP; NOP (73 00 4E 71 4E 71)
-    static const uint8_t subq_beq[] = { 0x53, 0x81, 0x67, 0x00 };
+    const uint8_t subq_beq[] = { 0x53, 0x81, 0x67, 0x00 };
 
     switch (family) {
         case CD_BIOS_CDZ: {
@@ -1960,6 +1963,7 @@ void geo_cd_postload(void) {
         geo_log(GEO_LOG_INF,
             "CD BIOS family: %s (SP=%02x%02x%02x%02x vec6C=%02x%02x%02x%02x)\n",
             bios_family == CD_BIOS_CDZ ? "CDZ" :
+            bios_family == CD_BIOS_UNI ? "CD Universe BIOS" :
             bios_family == CD_BIOS_TOP ? "Top Loader" :
             bios_family == CD_BIOS_FRONT ? "Front Loader" : "Unknown",
             romdata->b[0], romdata->b[1], romdata->b[2], romdata->b[3],

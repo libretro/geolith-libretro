@@ -83,6 +83,7 @@ const void* geo_cd_pram_ptr(void);
 #define CD_BIOS_FRONT       1
 #define CD_BIOS_TOP         2
 #define CD_BIOS_CDZ         3
+#define CD_BIOS_UNI         4
 
 int geo_cd_detect_bios(uint8_t *bios, size_t sz);
 void geo_cd_set_speed_hack(int enabled);
