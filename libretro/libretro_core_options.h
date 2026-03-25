@@ -339,7 +339,8 @@ static struct retro_core_option_v2_definition option_defs_us[] = {
       "geolith_cd_speed_hack",
       "CD Speed Hack",
       NULL,
-      "Patch BIOS busy-wait loops to reduce loading times",
+      "Patch BIOS busy-wait loops to reduce loading times (Does not work for "
+      "Universe BIOS)",
       NULL,
       "hacks",
       {

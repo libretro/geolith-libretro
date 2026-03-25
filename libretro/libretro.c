@@ -707,7 +707,8 @@ static void check_variables(bool first_run) {
     var.value = NULL;
 
     if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
-        cd_speed_hack = !strcmp(var.value, "enabled");
+        cd_speed_hack = cd_systype == SYSTEM_CDU ?
+            0 : !strcmp(var.value, "enabled");
         if (cd_mode)
             geo_cd_set_speed_hack(cd_speed_hack);
     }
@@ -1126,7 +1127,7 @@ bool retro_load_game(const struct retro_game_info *info) {
             geo_mixer_set_rate(SAMPLERATE_ADJUSTED);
             geo_mixer_set_raw(0);
             geo_mixer_init();
-            geo_cd_set_speed_hack(cd_speed_hack);
+            geo_cd_set_speed_hack(cd_systype == SYSTEM_CDU ? 0 : cd_speed_hack);
         }
     }
 
