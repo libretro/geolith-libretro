@@ -41,12 +41,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 void geo_cd_irq_set(uint8_t bits);
 void geo_cd_irq_clear(uint8_t bits);
 uint8_t geo_cd_irq_pending(void);
-
-// CD communication vector (0x54=decoder, 0x58=communication)
-extern uint32_t cd_irq_vector;
-
 void geo_cd_frame_end(void);
-
 void geo_cd_postload(void);
 void geo_cd_init(void);
 void geo_cd_deinit(void);

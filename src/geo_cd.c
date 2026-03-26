@@ -44,7 +44,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "geo_serial.h"
 #include "geo_z80.h"
 
-// CD RAM Buffers
+// Neo Geo CD RAM Buffers
 static uint8_t pram[SIZE_2M];          // Program RAM (replaces P ROM + main RAM)
 static uint8_t spr_dram[SIZE_4M];      // Sprite DRAM (replaces C ROM)
 static uint8_t pcm_dram[SIZE_1M];      // PCM DRAM (replaces V ROMs)
@@ -140,7 +140,8 @@ static void lc_buffer_write(uint16_t pos, const uint8_t *data, uint16_t len) {
     uint32_t end = (uint32_t)pos + len;
     if (end <= SIZE_64K) {
         memcpy(&lc.buffer[pos], data, len);
-    } else {
+    }
+    else {
         uint32_t first = SIZE_64K - pos;
         memcpy(&lc.buffer[pos], data, first);
         memcpy(&lc.buffer[0], data + first, len - first);
@@ -196,7 +197,6 @@ static uint8_t cd_irq_enabled = 0;     // FF0181
 static uint16_t irq_mask1 = 0;         // FF0002: CDROM interrupt mask
 static uint16_t irq_mask2 = 0;         // FF0004: VBL interrupt mask (VITAL)
 static int vbl_pending = 0;            // Latched VBL when irq_mask2 wasn't ready
-uint32_t cd_irq_vector = 0;            // CD interrupt vector (0x54 or 0x58)
 
 // Interrupt handling
 static uint8_t cd_pending_irq = 0;
@@ -320,7 +320,7 @@ static size_t cdda_sector_pos = CDDA_SAMPLES_PER_SECTOR; // Position in cache (s
 static uint32_t cdda_audio_lba = 0; // Audio stream LBA (independent of cd.play_lba)
 static uint8_t cdda_playing = 0;
 
-// Master cycle counter within the frame — for cycle-accurate CDDA sample indexing
+// Master cycle counter within the frame for cycle-accurate CDDA sample indexing
 #define MCYC_PER_FRAME_CD 405504
 static uint32_t cd_frame_mcycs = 0;
 
@@ -864,6 +864,12 @@ static void cd_comm_process_command(void) {
 #define DMA_DEST_MAPPED  1
 #define DMA_DEST_PALETTE 2
 
+// Transfer Areas
+#define TRANSAREA_SPR    0
+#define TRANSAREA_PCM    1
+#define TRANSAREA_Z80    4
+#define TRANSAREA_FIX    5
+
 static int cd_dma_resolve_dest(uint32_t address, uint8_t **dst_ptr, uint32_t *dst_mask) {
     address &= 0xffffff;
     if (address < 0x200000) {
@@ -871,36 +877,43 @@ static int cd_dma_resolve_dest(uint32_t address, uint8_t **dst_ptr, uint32_t *ds
         *dst_ptr = pram;
         *dst_mask = SIZE_2M - 1;
         return DMA_DEST_RAM;
-    } else if (address >= 0x400000 && address < 0x800000) {
+    }
+    else if (address >= 0x400000 && address < 0x800000) {
         // Palette RAM — handled via geo_lspc_palram_wr16 for color conversion
         *dst_ptr = (uint8_t*)1; // non-NULL sentinel
         *dst_mask = 0x1fff; // 8K palette entries (16KB / 2)
         return DMA_DEST_PALETTE;
-    } else if (address >= 0xe00000 && address <= 0xefffff) {
-        // Mapped area — route based on reg_transarea register
+    }
+    else if (address >= 0xe00000 && address <= 0xefffff) {
         switch (reg_transarea) {
-            case 0: // SPR
+            case TRANSAREA_SPR: {
                 *dst_ptr = spr_dram + (spr_bank * SIZE_1M);
                 *dst_mask = SIZE_1M - 1;
                 break;
-            case 1: // PCM
+            }
+            case TRANSAREA_PCM: {
                 *dst_ptr = pcm_dram + (pcm_bank * SIZE_512K);
                 *dst_mask = SIZE_512K - 1;
                 break;
-            case 4: // Z80
+            }
+            case TRANSAREA_Z80: {
                 *dst_ptr = z80_ram_cd;
                 *dst_mask = SIZE_64K - 1;
                 break;
-            case 5: // FIX
+            }
+            case TRANSAREA_FIX: {
                 *dst_ptr = fix_ram;
                 *dst_mask = SIZE_128K - 1;
                 break;
-            default:
+            }
+            default: {
                 *dst_ptr = NULL;
                 return DMA_DEST_RAM;
+            }
         }
         return DMA_DEST_MAPPED;
-    } else {
+    }
+    else {
         *dst_ptr = NULL;
         return DMA_DEST_RAM;
     }
@@ -911,32 +924,35 @@ static int cd_dma_resolve_dest(uint32_t address, uint8_t **dst_ptr, uint32_t *ds
 static void dma_write_word(uint8_t *ptr, uint32_t mask, uint32_t *offset,
                            uint16_t data, int dest_type) {
     switch (dest_type) {
-        case DMA_DEST_MAPPED:
+        case DMA_DEST_MAPPED: {
             switch (reg_transarea) {
-                case 0: { // SPR - big-endian word write
+                case TRANSAREA_SPR: { // SPR - big-endian word write
                     uint32_t addr = *offset & (mask & ~1u);
                     ptr[addr] = (data >> 8) & 0xff;
                     ptr[addr + 1] = data & 0xff;
                     break;
                 }
-                case 1: // PCM - address >> 1, low byte
-                case 4: // Z80 - address >> 1, low byte
-                case 5: { // FIX - address >> 1, low byte
+                case TRANSAREA_PCM: // PCM - address >> 1, low byte
+                case TRANSAREA_Z80: // Z80 - address >> 1, low byte
+                case TRANSAREA_FIX: { // FIX - address >> 1, low byte
                     uint32_t addr = (*offset >> 1) & mask;
                     ptr[addr] = data & 0xff;
                     break;
                 }
             }
             break;
-        case DMA_DEST_PALETTE:
-            // Route through LSPC palette write for proper color conversion
+        }
+        case DMA_DEST_PALETTE: {
+            // Route through LSPC palette write for proper colour conversion
             geo_lspc_palram_wr16(*offset, data);
             break;
-        default:
+        }
+        default: {
             // Program RAM - big-endian word write
             ptr[*offset & mask] = (data >> 8) & 0xff;
             ptr[(*offset + 1) & mask] = data & 0xff;
             break;
+        }
     }
     *offset += 2;
 }
@@ -1398,22 +1414,27 @@ static uint8_t transfer_read_8(uint32_t addr) {
     addr &= 0xfffff;
 
     switch (reg_transarea) {
-        case 0: // SPR
+        case TRANSAREA_SPR: { // SPR
             if (busreq_spr)
                 return spr_dram[(spr_bank * SIZE_1M) + (addr & (SIZE_1M - 1))];
             break;
-        case 1: // PCM - odd bytes only
+        }
+        case TRANSAREA_PCM: { // PCM - Odd bytes only
             if (busreq_pcm && (addr & 1))
-                return pcm_dram[(pcm_bank * SIZE_512K) + ((addr >> 1) & (SIZE_512K - 1))];
+                return pcm_dram[(pcm_bank * SIZE_512K) +
+                    ((addr >> 1) & (SIZE_512K - 1))];
             break;
-        case 4: // Z80 - odd bytes only
+        }
+        case TRANSAREA_Z80: { // Z80 - Odd bytes only
             if (busreq_z80 && (addr & 1))
                 return z80_ram_cd[(addr >> 1) & (SIZE_64K - 1)];
             break;
-        case 5: // FIX - odd bytes only
+        }
+        case TRANSAREA_FIX: { // FIX - Odd bytes only
             if (busreq_fix && (addr & 1))
                 return fix_ram[(addr >> 1) & (SIZE_128K - 1)];
             break;
+        }
     }
     return 0xff;
 }
@@ -1422,25 +1443,26 @@ static uint16_t transfer_read_16(uint32_t addr) {
     addr &= 0xfffff;
 
     switch (reg_transarea) {
-        case 0: { // SPR - word read
+        case TRANSAREA_SPR: { // SPR - Word read
             uint32_t spr_addr = (spr_bank * SIZE_1M) + (addr & (SIZE_1M - 2));
             if (busreq_spr)
                 return (spr_dram[spr_addr] << 8) | spr_dram[spr_addr + 1];
             break;
         }
-        case 1: { // PCM
-            uint32_t pcm_addr = (pcm_bank * SIZE_512K) + ((addr >> 1) & (SIZE_512K - 1));
+        case TRANSAREA_PCM: { // PCM
+            uint32_t pcm_addr = (pcm_bank * SIZE_512K) +
+                ((addr >> 1) & (SIZE_512K - 1));
             if (busreq_pcm)
                 return pcm_dram[pcm_addr] | 0xff00;
             break;
         }
-        case 4: { // Z80
+        case TRANSAREA_Z80: { // Z80
             uint32_t z_addr = (addr >> 1) & (SIZE_64K - 1);
             if (busreq_z80)
                 return z80_ram_cd[z_addr] | 0xff00;
             break;
         }
-        case 5: { // FIX
+        case TRANSAREA_FIX: { // FIX
             uint32_t fix_addr = (addr >> 1) & (SIZE_128K - 1);
             if (busreq_fix)
                 return fix_ram[fix_addr] | 0xff00;
@@ -1454,23 +1476,28 @@ static void transfer_write_8(uint32_t addr, uint8_t val) {
     addr &= 0xfffff;
 
     switch (reg_transarea) {
-        case 0: // SPR
+        case TRANSAREA_SPR: { // SPR
             if (!busreq_spr)
                 return;
             spr_dram[(spr_bank * SIZE_1M) + (addr & (SIZE_1M - 1))] = val;
             return;
-        case 1: // PCM - odd bytes only
+        }
+        case TRANSAREA_PCM: { // PCM - Odd bytes only
             if (busreq_pcm && (addr & 1))
-                pcm_dram[(pcm_bank * SIZE_512K) + ((addr >> 1) & (SIZE_512K - 1))] = val;
+                pcm_dram[(pcm_bank * SIZE_512K) +
+                    ((addr >> 1) & (SIZE_512K - 1))] = val;
             return;
-        case 4: // Z80 - odd bytes only
+        }
+        case TRANSAREA_Z80: { // Z80 - Odd bytes only
             if (busreq_z80 && (addr & 1))
                 z80_ram_cd[(addr >> 1) & (SIZE_64K - 1)] = val;
             return;
-        case 5: // FIX - odd bytes only
+        }
+        case TRANSAREA_FIX: { // FIX - Odd bytes only
             if (busreq_fix && (addr & 1))
                 fix_ram[(addr >> 1) & (SIZE_128K - 1)] = val;
             return;
+        }
     }
 }
 
@@ -1478,7 +1505,7 @@ static void transfer_write_16(uint32_t addr, uint16_t val) {
     addr &= 0xfffff;
 
     switch (reg_transarea) {
-        case 0: { // SPR - word write
+        case TRANSAREA_SPR: { // SPR - Word write
             if (!busreq_spr)
                 return;
             uint32_t spr_addr = (spr_bank * SIZE_1M) + (addr & (SIZE_1M - 2));
@@ -1486,21 +1513,22 @@ static void transfer_write_16(uint32_t addr, uint16_t val) {
             spr_dram[spr_addr + 1] = val & 0xff;
             return;
         }
-        case 1: { // PCM
+        case TRANSAREA_PCM: { // PCM
             if (!busreq_pcm)
                 return;
-            uint32_t pcm_addr = (pcm_bank * SIZE_512K) + ((addr >> 1) & (SIZE_512K - 1));
+            uint32_t pcm_addr = (pcm_bank * SIZE_512K) +
+                ((addr >> 1) & (SIZE_512K - 1));
             pcm_dram[pcm_addr] = val & 0xff;
             return;
         }
-        case 4: { // Z80
+        case TRANSAREA_Z80: { // Z80
             if (!busreq_z80)
                 return;
             uint32_t z_addr = (addr >> 1) & (SIZE_64K - 1);
             z80_ram_cd[z_addr] = val & 0xff;
             return;
         }
-        case 5: { // FIX
+        case TRANSAREA_FIX: { // FIX
             if (!busreq_fix)
                 return;
             uint32_t fix_addr = (addr >> 1) & (SIZE_128K - 1);
@@ -2130,7 +2158,6 @@ void geo_cd_state_save(uint8_t *st) {
     // IRQ state
     geo_serial_push8(st, cd_pending_irq);
     geo_serial_push8(st, vbl_pending);
-    geo_serial_push32(st, cd_irq_vector);
     geo_serial_push8(st, sector_decoded_this_frame);
     geo_serial_push32(st, cd_frame_mcycs);
 
@@ -2176,7 +2203,6 @@ void geo_cd_state_load(uint8_t *st) {
 
     cd_pending_irq = geo_serial_pop8(st);
     vbl_pending = geo_serial_pop8(st);
-    cd_irq_vector = geo_serial_pop32(st);
     sector_decoded_this_frame = geo_serial_pop8(st);
     cd_frame_mcycs = geo_serial_pop32(st);
 

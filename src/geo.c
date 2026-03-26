@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2022-2024 Rupert Carmichael
+Copyright (c) 2022-2026 Rupert Carmichael
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -52,7 +52,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define MCYC_PER_FRAME (MCYC_PER_LINE * 264) // 405504
 
 #define SIZE_STATE_CART 485301
-#define SIZE_STATE_DISC 7835614
+#define SIZE_STATE_DISC 7835610
 
 // Log callback
 void (*geo_log)(int, const char *, ...);
