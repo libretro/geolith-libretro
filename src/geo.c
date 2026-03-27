@@ -51,8 +51,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define MCYC_PER_LINE 1536
 #define MCYC_PER_FRAME (MCYC_PER_LINE * 264) // 405504
 
-#define SIZE_STATE_CART 485301
-#define SIZE_STATE_DISC 7835610
+#define SIZE_STATE_CART 485305
+#define SIZE_STATE_DISC 7835614
 
 // Log callback
 void (*geo_log)(int, const char *, ...);
@@ -69,6 +69,7 @@ static romdata_t romdata;
 
 static uint8_t *state = NULL;
 static size_t state_sz = 0;
+static uint32_t state_version = ('G' << 24) | ('E' << 16) | ('O' << 8) | 0x01;
 
 // Cycle counters
 static uint32_t mcycs = 0;
@@ -504,6 +505,14 @@ void geo_deinit(void) {
 int geo_state_load_raw(const void *sstate) {
     uint8_t *st = (uint8_t*)sstate;
     geo_serial_begin();
+
+    uint32_t stver = 0;
+    (void)stver; // This variable remains unused for now
+    if ((geo_serial_peek32(st) & 0xffffff00) == 0x47454f00) // G E O '0'
+        stver = geo_serial_pop32(st);
+    else
+        geo_log(GEO_LOG_WRN, "No state signature, success not guaranteed\n");
+
     uint8_t stregion = geo_serial_pop8(st);
     uint8_t stsys = geo_serial_pop8(st);
 
@@ -588,6 +597,7 @@ int geo_state_load(const char *filename) {
 
 const void* geo_state_save_raw(void) {
     geo_serial_begin();
+    geo_serial_push32(state, state_version);
     geo_serial_push8(state, ngsys.region);
     geo_serial_push8(state, ngsys.sys);
     geo_serial_push32(state, mcycs);
