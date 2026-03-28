@@ -44,13 +44,20 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "geo_serial.h"
 #include "geo_z80.h"
 
+// BIOS family detection
+#define CD_BIOS_UNKNOWN     0
+#define CD_BIOS_FRONT       1
+#define CD_BIOS_TOP         2
+#define CD_BIOS_CDZ         3
+#define CD_BIOS_UNI         4
+
 // Neo Geo CD RAM Buffers
-static uint8_t pram[SIZE_2M];          // Program RAM (replaces P ROM + main RAM)
+static uint8_t pram[SIZE_2M];          // Program RAM (replaces P ROM/main RAM)
 static uint8_t spr_dram[SIZE_4M];      // Sprite DRAM (replaces C ROM)
 static uint8_t pcm_dram[SIZE_1M];      // PCM DRAM (replaces V ROMs)
 static uint8_t z80_ram_cd[SIZE_64K];   // Z80 RAM (replaces M1 ROM + banking)
 static uint8_t fix_ram[SIZE_128K];     // FIX layer RAM (replaces S ROM)
-static uint8_t backup_ram[SIZE_8K];    // Backup RAM (replaces memory card area)
+static uint8_t bram[SIZE_8K];          // Backup RAM (replaces memory card)
 
 // ROM data pointer
 static romdata_t *romdata = NULL;
@@ -136,13 +143,13 @@ static lc8951_t lc;
 #define LC_CTRL1_SHDREN 0x01
 
 // Write into the 64K circular buffer with 16-bit position wrapping
-static void lc_buffer_write(uint16_t pos, const uint8_t *data, uint16_t len) {
-    uint32_t end = (uint32_t)pos + len;
+static void lc_buffer_write(size_t pos, const uint8_t *data, size_t len) {
+    size_t end = pos + len;
     if (end <= SIZE_64K) {
         memcpy(&lc.buffer[pos], data, len);
     }
     else {
-        uint32_t first = SIZE_64K - pos;
+        size_t first = SIZE_64K - pos;
         memcpy(&lc.buffer[pos], data, first);
         memcpy(&lc.buffer[0], data + first, len - first);
     }
@@ -196,7 +203,7 @@ static uint8_t cd_irq_mask = 0;        // FF000F acknowledge bits
 static uint8_t cd_irq_enabled = 0;     // FF0181
 static uint16_t irq_mask1 = 0;         // FF0002: CDROM interrupt mask
 static uint16_t irq_mask2 = 0;         // FF0004: VBL interrupt mask (VITAL)
-static int vbl_pending = 0;            // Latched VBL when irq_mask2 wasn't ready
+static int vbl_pending = 0;            // Latched VBL if irq_mask2 wasn't ready
 
 // Interrupt handling
 static uint8_t cd_pending_irq = 0;
@@ -266,14 +273,14 @@ static inline uint16_t reverse_bits_16(uint16_t val) {
 // =========================================================================
 // CD timing
 // =========================================================================
-#define CD_SECTOR_RATE_IDLE (24000000 / 64)   // ~375000 master cycles (idle)
-#define CD_SECTOR_RATE_1X   (24000000 / 75)   // ~320000 master cycles per sector
-#define CD_SECTOR_RATE_2X   (24000000 / 150)  // ~160000 master cycles per sector
+#define CD_SECTOR_RATE_IDLE (24000000 / 64)  // ~375000 master cycles (idle)
+#define CD_SECTOR_RATE_1X   (24000000 / 75)  // ~320000 master cycles per sector
+#define CD_SECTOR_RATE_2X   (24000000 / 150) // ~160000 master cycles per sector
 
 static uint32_t cd_sector_counter = 0;
 static uint32_t cd_sector_rate = CD_SECTOR_RATE_1X;
 
-static int speed_hack_enabled = 0;
+static int speed_hack = 0;
 static int bios_family = CD_BIOS_UNKNOWN;
 static int sector_decoded_this_frame = 0;
 
@@ -314,14 +321,15 @@ static unsigned find_track_for_lba(uint32_t lba) {
    exactly the samples it needs. A cached sector bridges the 588-sample sector
    boundary.
 */
-#define CDDA_SAMPLES_PER_SECTOR 588
-static int16_t cdda_sector_cache[CDDA_SAMPLES_PER_SECTOR * 2]; // Current sector
-static size_t cdda_sector_pos = CDDA_SAMPLES_PER_SECTOR; // Position in cache (start exhausted)
-static uint32_t cdda_audio_lba = 0; // Audio stream LBA (independent of cd.play_lba)
+#define CDDA_SAMPS_PER_SECTOR 588
 static uint8_t cdda_playing = 0;
+static int16_t cdda_sector_cache[CDDA_SAMPS_PER_SECTOR << 1]; // Current sector
+static size_t cdda_sector_pos = CDDA_SAMPS_PER_SECTOR; // Position in cache
 
-// Master cycle counter within the frame for cycle-accurate CDDA sample indexing
-#define MCYC_PER_FRAME_CD 405504
+// Audio stream LBA (independent of cd.play_lba)
+static uint32_t cdda_audio_lba = 0;
+
+// Master cycle counter within frame for cycle-accurate CDDA sample indexing
 static uint32_t cd_frame_mcycs = 0;
 
 // =========================================================================
@@ -739,7 +747,8 @@ static void cd_comm_process_command(void) {
                 cd.playing_data = 0;
                 cdda_playing = 1;
                 cdda_audio_lba = lba;
-                cdda_sector_pos = CDDA_SAMPLES_PER_SECTOR; // Force new sector read
+                // Force new sector read
+                cdda_sector_pos = CDDA_SAMPS_PER_SECTOR;
             } else {
                 cd.playing_audio = 0;
                 cd.playing_data = 1;
@@ -793,7 +802,7 @@ static void cd_comm_process_command(void) {
                 if (cd.playing_audio) {
                     cdda_playing = 1;
                     cdda_audio_lba = cd.play_lba;
-                    cdda_sector_pos = CDDA_SAMPLES_PER_SECTOR;
+                    cdda_sector_pos = CDDA_SAMPS_PER_SECTOR;
                 }
             }
             cd.status[0] = cd.drive_status;
@@ -870,7 +879,8 @@ static void cd_comm_process_command(void) {
 #define TRANSAREA_Z80    4
 #define TRANSAREA_FIX    5
 
-static int cd_dma_resolve_dest(uint32_t address, uint8_t **dst_ptr, uint32_t *dst_mask) {
+static int cd_dma_resolve_dest(uint32_t address, uint8_t **dst_ptr,
+                               uint32_t *dst_mask) {
     address &= 0xffffff;
     if (address < 0x200000) {
         // Program RAM
@@ -919,8 +929,9 @@ static int cd_dma_resolve_dest(uint32_t address, uint8_t **dst_ptr, uint32_t *ds
     }
 }
 
-// Write a 16-bit word to the DMA destination, advancing offset by 2.
-// Handles mapped area address transformations for FIX/Z80/PCM (addr >> 1, low byte).
+/* Write a 16-bit word to the DMA destination, advancing offset by 2. Handles
+   mapped area address transformations for FIX/Z80/PCM (addr >> 1, low byte).
+*/
 static void dma_write_word(uint8_t *ptr, uint32_t mask, uint32_t *offset,
                            uint16_t data, int dest_type) {
     switch (dest_type) {
@@ -966,7 +977,8 @@ static void cd_dma_execute(void) {
 
     int dest_type = cd_dma_resolve_dest(dma.dst, &dst_ptr, &dst_mask);
     if (!dst_ptr) {
-        geo_log(GEO_LOG_WRN, "DMA to unknown address: %06x area=%u\n", dma.dst, reg_transarea);
+        geo_log(GEO_LOG_WRN, "DMA to unknown address: %06x area=%u\n",
+            dma.dst, reg_transarea);
         dma.enabled = 0;
         return;
     }
@@ -977,7 +989,8 @@ static void cd_dma_execute(void) {
             // Copy from LC8951 circular buffer to destination
             // Reads big-endian words from buffer[DAC] with 16-bit wrapping
             if (lc.ifstat & LC_IFSTAT_DTBSY) {
-                geo_log(GEO_LOG_WRN, "DMA %04x: DTRG not written (DTBSY set)\n", dma.config);
+                geo_log(GEO_LOG_WRN,
+                    "DMA %04x: DTRG not written (DTBSY set)\n", dma.config);
                 break;
             }
             uint32_t dst = dma.dst;
@@ -987,7 +1000,8 @@ static void cd_dma_execute(void) {
                 len = lc_words;
             uint16_t dac = lc.dacl;
             for (uint32_t i = 0; i < len; ++i) {
-                uint16_t data = ((uint16_t)lc.buffer[dac] << 8) | lc.buffer[(uint16_t)(dac + 1)];
+                uint16_t data = ((uint16_t)lc.buffer[dac] << 8) |
+                    lc.buffer[(uint16_t)(dac + 1)];
                 dma_write_word(dst_ptr, dst_mask, &dst, data, dest_type);
                 dac += 2;
             }
@@ -997,7 +1011,8 @@ static void cd_dma_execute(void) {
         case 0xfc2d: {
             // Copy from LC8951 buffer, odd bytes (2 words per source word)
             if (lc.ifstat & LC_IFSTAT_DTBSY) {
-                geo_log(GEO_LOG_WRN, "DMA fc2d: DTRG not written (DTBSY set)\n");
+                geo_log(GEO_LOG_WRN,
+                    "DMA fc2d: DTRG not written (DTBSY set)\n");
                 break;
             }
             uint32_t dst = dma.dst;
@@ -1007,7 +1022,8 @@ static void cd_dma_execute(void) {
                 len = lc_words;
             uint16_t dac = lc.dacl;
             for (uint32_t i = 0; i < len; ++i) {
-                uint16_t data = ((uint16_t)lc.buffer[dac] << 8) | lc.buffer[(uint16_t)(dac + 1)];
+                uint16_t data = ((uint16_t)lc.buffer[dac] << 8) |
+                    lc.buffer[(uint16_t)(dac + 1)];
                 dma_write_word(dst_ptr, dst_mask, &dst, data >> 8, dest_type);
                 dma_write_word(dst_ptr, dst_mask, &dst, data, dest_type);
                 dac += 2;
@@ -1016,20 +1032,21 @@ static void cd_dma_execute(void) {
             break;
         }
         case 0xfe3d:
-        case 0xfe6d: {
-            // RAM to RAM copy — source and destination registers are REVERSED
-            uint32_t src = dma.dst;   // Hardware "destination" register is actually source
-            uint32_t dst = dma.src;   // Hardware "source" register is actually destination
+        case 0xfe6d: { // RAM to RAM copy
+            uint32_t src = dma.dst; // Destination register is actually source
+            uint32_t dst = dma.src; // Source register is actually destination
 
             dest_type = cd_dma_resolve_dest(dst, &dst_ptr, &dst_mask);
             if (!dst_ptr) {
-                geo_log(GEO_LOG_WRN, "DMA fe3d to unknown address: %06x\n", dst);
+                geo_log(GEO_LOG_WRN,
+                    "DMA fe3d to unknown address: %06x\n", dst);
                 break;
             }
 
-            // Inhibit blank vector table writes (Double Dragon fix):
-            // Some games zero the vector table before loading real vectors.
-            // If we write the zeros, the next interrupt hits address 0 → crash.
+            /* Inhibit blank vector table writes (Double Dragon fix):
+               Some games zero the vector table before loading real vectors.
+               If we write the zeros, the next interrupt hits address 0 → crash.
+            */
             if ((dst & 0xffffff) < 0x80) {
                 int blank = 1;
                 for (uint32_t i = 0; i < dma.len && blank; ++i) {
@@ -1047,13 +1064,15 @@ static void cd_dma_execute(void) {
             }
             break;
         }
-        case 0xfef5: {
-            // Fill with incrementing addresses
-            // Writes 2 words per iteration (addr>>16, addr), address increments by 4
+        case 0xfef5: { // Fill with incrementing addresses
+            /* Writes 2 words per iteration (addr >> 16, addr), address
+               increments by 4
+            */
             uint32_t address = dma.dst;
             uint32_t dst = dma.dst;
             for (uint32_t i = 0; i < dma.len; ++i) {
-                dma_write_word(dst_ptr, dst_mask, &dst, (address >> 16), dest_type);
+                dma_write_word(dst_ptr, dst_mask, &dst, (address >> 16),
+                    dest_type);
                 dma_write_word(dst_ptr, dst_mask, &dst, address, dest_type);
                 address += 4;
             }
@@ -1070,16 +1089,18 @@ static void cd_dma_execute(void) {
             break;
         }
         case 0xe2dd:
-        case 0xf2dd: {
-            // Copy odd bytes — source and destination registers are REVERSED
-            // Reads word, writes BYTE_SWAP_16(data) then data (2 words per iteration)
-            uint32_t src = dma.dst;   // Hardware "destination" is actually source
-            uint32_t dst = dma.src;   // Hardware "source" is actually destination
+        case 0xf2dd: { // Copy odd bytes
+            /* Reads word, writes BYTE_SWAP_16(data) then data (2 words per
+               iteration)
+            */
+            uint32_t src = dma.dst; // Destination" is actually source
+            uint32_t dst = dma.src; // Source is actually destination
 
             // Re-resolve destination from the actual destination address
             dest_type = cd_dma_resolve_dest(dst, &dst_ptr, &dst_mask);
             if (!dst_ptr) {
-                geo_log(GEO_LOG_WRN, "DMA e2dd to unknown address: %06x\n", dst);
+                geo_log(GEO_LOG_WRN,
+                    "DMA e2dd to unknown address: %06x\n", dst);
                 break;
             }
 
@@ -1092,15 +1113,19 @@ static void cd_dma_execute(void) {
             }
             break;
         }
-        case 0xcffd: {
-            // Fill odd bytes with incrementing addresses
-            // Writes 4 words per iteration (addr bytes high to low), address increments by 8
+        case 0xcffd: { // Fill odd bytes with incrementing addresses
+            /* Writes 4 words per iteration (addr bytes high to low), address
+               increments by 8
+            */
             uint32_t address = dma.dst;
             uint32_t dst = dma.dst;
             for (uint32_t i = 0; i < dma.len; ++i) {
-                dma_write_word(dst_ptr, dst_mask, &dst, (address >> 24), dest_type);
-                dma_write_word(dst_ptr, dst_mask, &dst, (address >> 16), dest_type);
-                dma_write_word(dst_ptr, dst_mask, &dst, (address >> 8), dest_type);
+                dma_write_word(dst_ptr, dst_mask, &dst, (address >> 24),
+                    dest_type);
+                dma_write_word(dst_ptr, dst_mask, &dst, (address >> 16),
+                    dest_type);
+                dma_write_word(dst_ptr, dst_mask, &dst, (address >> 8),
+                    dest_type);
                 dma_write_word(dst_ptr, dst_mask, &dst, address, dest_type);
                 address += 8;
             }
@@ -1182,7 +1207,7 @@ static uint16_t cd_reg_read_16(uint32_t addr) {
 
         case 0x0188: // CDDA left channel (bit-reversed)
         case 0x018a: { // CDDA right channel (bit-reversed)
-            if (!cdda_playing || cdda_sector_pos >= CDDA_SAMPLES_PER_SECTOR)
+            if (!cdda_playing || cdda_sector_pos >= CDDA_SAMPS_PER_SECTOR)
                 return 0;
             int ch = (addr == 0x018a) ? 1 : 0;
             return reverse_bits_16(
@@ -1283,7 +1308,8 @@ static void cd_reg_write_8(uint32_t addr, uint8_t val) {
             if (cd.cmd_nibble & 1)
                 cd.cmd[byte_idx] = (cd.cmd[byte_idx] & 0xf0) | (val & 0x0f);
             else
-                cd.cmd[byte_idx] = (cd.cmd[byte_idx] & 0x0f) | ((val & 0x0f) << 4);
+                cd.cmd[byte_idx] = (cd.cmd[byte_idx] & 0x0f) |
+                    ((val & 0x0f) << 4);
             return;
         }
 
@@ -1314,7 +1340,9 @@ static void cd_reg_write_8(uint32_t addr, uint8_t val) {
 
         case 0x0181: { // CD communication nReset (active low)
             cd_irq_enabled = (val != 0);
-            // Reset packet pointers (commandPointer=0, responsePointer=9, strobe=1)
+            /* Reset packet pointers:
+               commandPointer = 0, responsePointer = 9, strobe = 1
+            */
             cd.cmd_nibble = 0;
             cd.stat_nibble = 9;
             cd.strobe = 1;
@@ -1575,7 +1603,7 @@ unsigned geo_cd_m68k_read_8(unsigned address) {
     }
     else if (address < 0xc00000) { // Backup RAM (8K mirrored)
         if (address & 0x01)
-            return backup_ram[(address >> 1) & 0x1fff];
+            return bram[(address >> 1) & 0x1fff];
         return 0xff;
     }
     else if (address < 0xd00000) { // BIOS ROM (512K mirrored)
@@ -1634,7 +1662,7 @@ unsigned geo_cd_m68k_read_16(unsigned address) {
         return geo_lspc_palram_rd16(address);
     }
     else if (address < 0xc00000) {
-        return backup_ram[(address >> 1) & 0x1fff] | 0xff00;
+        return bram[(address >> 1) & 0x1fff] | 0xff00;
     }
     else if (address < 0xd00000) {
         return read16(romdata->b, address & 0x7ffff);
@@ -1703,7 +1731,7 @@ void geo_cd_m68k_write_8(unsigned address, unsigned value) {
         geo_lspc_palram_wr08(address, value);
     }
     else if (address < 0xc00000) { // Backup RAM
-        backup_ram[(address >> 1) & 0x1fff] = value;
+        bram[(address >> 1) & 0x1fff] = value;
     }
     else if (address < 0xd00000) { // BIOS ROM (read-only)
         return;
@@ -1765,7 +1793,7 @@ void geo_cd_m68k_write_16(unsigned address, unsigned value) {
         geo_lspc_palram_wr16(address, value);
     }
     else if (address < 0xc00000) {
-        backup_ram[(address >> 1) & 0x1fff] = value & 0xff;
+        bram[(address >> 1) & 0x1fff] = value & 0xff;
     }
     else if (address < 0xd00000) {
         return;
@@ -1867,7 +1895,7 @@ void geo_cd_read_cdda(int16_t *out, size_t numsamps) {
         }
 
         // Check if a new sector should be read
-        if (cdda_sector_pos >= CDDA_SAMPLES_PER_SECTOR) {
+        if (cdda_sector_pos >= CDDA_SAMPS_PER_SECTOR) {
             if (cdda_audio_lba < geo_disc_leadout() &&
                 geo_disc_track_is_audio(find_track_for_lba(cdda_audio_lba))) {
                 if (!geo_disc_read_audio(cdda_audio_lba, cdda_sector_cache))
@@ -1911,7 +1939,7 @@ static void bios_patch(uint8_t *bios, size_t sz, uint32_t offset,
     memcpy(bios + offset, pat, patsz);
 }
 
-// NOP instruction (4E71) and STOP #$2000 + NOP (halt CPU until IRQ, supervisor mode)
+// NOP instruction (4E71) and STOP #$2000 + NOP
 static const uint8_t STOP_NOP[] = { 0x4E, 0x72, 0x20, 0x00, 0x4E, 0x71 };
 
 int geo_cd_detect_bios(uint8_t *bios, size_t sz) {
@@ -1946,21 +1974,21 @@ static void bios_patch_speed_hack(uint8_t *bios, size_t sz, int family) {
 
     switch (family) {
         case CD_BIOS_CDZ: {
-            static const uint32_t addrs[] = {0xE6E0, 0xE724, 0xE764, 0xE836, 0xE860};
+            const uint32_t addrs[] = {0xE6E0, 0xE724, 0xE764, 0xE836, 0xE860};
             for (int i = 0; i < 5; ++i)
                 if (bios_pattern(bios, sz, addrs[i], subq_beq, 4))
                     bios_patch(bios, sz, addrs[i], STOP_NOP, 6);
             break;
         }
         case CD_BIOS_FRONT: {
-            static const uint32_t addrs[] = {0x10716, 0x10758, 0x10798, 0x10864};
+            const uint32_t addrs[] = {0x10716, 0x10758, 0x10798, 0x10864};
             for (int i = 0; i < 4; ++i)
                 if (bios_pattern(bios, sz, addrs[i], subq_beq, 4))
                     bios_patch(bios, sz, addrs[i], STOP_NOP, 6);
             break;
         }
         case CD_BIOS_TOP: {
-            static const uint32_t addrs[] = {0x0FFCA, 0x1000E, 0x1004E, 0x10120};
+            const uint32_t addrs[] = {0x0FFCA, 0x1000E, 0x1004E, 0x10120};
             for (int i = 0; i < 4; ++i)
                 if (bios_pattern(bios, sz, addrs[i], subq_beq, 4))
                     bios_patch(bios, sz, addrs[i], STOP_NOP, 6);
@@ -1970,7 +1998,7 @@ static void bios_patch_speed_hack(uint8_t *bios, size_t sz, int family) {
 }
 
 void geo_cd_set_speed_hack(int enabled) {
-    speed_hack_enabled = enabled;
+    speed_hack = enabled;
 }
 
 int geo_cd_sector_decoded_this_frame(void) {
@@ -1999,7 +2027,7 @@ void geo_cd_postload(void) {
             romdata->b[0x6F]);
 
         // Apply speed hack if enabled
-        if (speed_hack_enabled)
+        if (speed_hack)
             bios_patch_speed_hack(romdata->b, romdata->bsz, bios_family);
     }
 }
@@ -2014,18 +2042,18 @@ void geo_cd_init(void) {
     memset(pcm_dram, 0, SIZE_1M);
     memset(z80_ram_cd, 0, SIZE_64K);
     memset(fix_ram, 0, SIZE_128K);
-    memset(backup_ram, 0, SIZE_8K);
+    memset(bram, 0, SIZE_8K);
 
     // Default the Universe BIOS to CDZ mode
     if (ngsys.sys == SYSTEM_CDU) {
-        backup_ram[0] = 0x56;
-        backup_ram[1] = 0x32;
-        backup_ram[2] = 0x02;
+        bram[0] = 0x56;
+        bram[1] = 0x32;
+        bram[2] = 0x02;
         switch (ngsys.region) { // Try to use the correct region
-            default: case REGION_US: backup_ram[3] = 0x10; break;
-            case REGION_JP: backup_ram[3] = 0x00; break;
-            case REGION_EU: backup_ram[3] = 0x20; break;
-            case REGION_AS: backup_ram[3] = 0x30; break; // Brazil?
+            default: case REGION_US: bram[3] = 0x10; break;
+            case REGION_JP: bram[3] = 0x00; break;
+            case REGION_EU: bram[3] = 0x20; break;
+            case REGION_AS: bram[3] = 0x30; break; // Brazil?
         }
     }
 
@@ -2078,7 +2106,7 @@ void geo_cd_reset(void) {
     cd_sector_counter = 0;
     cdda_playing = 0;
     cdda_audio_lba = 0;
-    cdda_sector_pos = CDDA_SAMPLES_PER_SECTOR;
+    cdda_sector_pos = CDDA_SAMPS_PER_SECTOR;
     memset(cdda_sector_cache, 0, sizeof(cdda_sector_cache));
     cd_frame_mcycs = 0;
     cached_track = 1;
@@ -2091,9 +2119,10 @@ void geo_cd_reset(void) {
     cd_comm_reset();
     memset(&dma, 0, sizeof(dma));
 
-    // CDZ BIOS polls Status (0x00) expecting STOPPED before proceeding.
-    // Real hardware: drive spins up and transitions to STOPPED autonomously.
-    // Since we have a disc loaded at boot, start directly in STOPPED state.
+    /* CDZ BIOS polls Status (0x00) expecting STOPPED before proceeding.
+       Real hardware: drive spins up and transitions to STOPPED autonomously.
+       Since we have a disc loaded at boot, start directly in STOPPED state.
+    */
     cd.drive_status = CD_STATUS_STOP;
     cd.status[0] = cd.drive_status;
     cd_comm_build_response();
@@ -2102,8 +2131,8 @@ void geo_cd_reset(void) {
 // =========================================================================
 // Backup RAM Access
 // =========================================================================
-const void* geo_cd_backup_ram_ptr(void) {
-    return backup_ram;
+const void* geo_cd_bram_ptr(void) {
+    return bram;
 }
 
 const void* geo_cd_pram_ptr(void) {
@@ -2125,7 +2154,7 @@ void geo_cd_state_save(uint8_t *st) {
     geo_serial_pushblk(st, pcm_dram, SIZE_1M);
     geo_serial_pushblk(st, z80_ram_cd, SIZE_64K);
     geo_serial_pushblk(st, fix_ram, SIZE_128K);
-    geo_serial_pushblk(st, backup_ram, SIZE_8K);
+    geo_serial_pushblk(st, bram, SIZE_8K);
 
     // CD controller state
     geo_serial_pushblk(st, (uint8_t*)&lc, sizeof(lc));
@@ -2162,7 +2191,8 @@ void geo_cd_state_save(uint8_t *st) {
     geo_serial_push32(st, cd_frame_mcycs);
 
     // CDDA state
-    geo_serial_pushblk(st, (uint8_t*)cdda_sector_cache, sizeof(cdda_sector_cache));
+    geo_serial_pushblk(st, (uint8_t*)cdda_sector_cache,
+        sizeof(cdda_sector_cache));
     geo_serial_push32(st, (uint32_t)cdda_sector_pos);
     geo_serial_push32(st, cdda_audio_lba);
     geo_serial_push8(st, cdda_playing);
@@ -2174,7 +2204,7 @@ void geo_cd_state_load(uint8_t *st) {
     geo_serial_popblk(pcm_dram, st, SIZE_1M);
     geo_serial_popblk(z80_ram_cd, st, SIZE_64K);
     geo_serial_popblk(fix_ram, st, SIZE_128K);
-    geo_serial_popblk(backup_ram, st, SIZE_8K);
+    geo_serial_popblk(bram, st, SIZE_8K);
 
     geo_serial_popblk((uint8_t*)&lc, st, sizeof(lc));
     geo_serial_popblk((uint8_t*)&cd, st, sizeof(cd));
@@ -2206,7 +2236,8 @@ void geo_cd_state_load(uint8_t *st) {
     sector_decoded_this_frame = geo_serial_pop8(st);
     cd_frame_mcycs = geo_serial_pop32(st);
 
-    geo_serial_popblk((uint8_t*)cdda_sector_cache, st, sizeof(cdda_sector_cache));
+    geo_serial_popblk((uint8_t*)cdda_sector_cache, st,
+        sizeof(cdda_sector_cache));
     cdda_sector_pos = (size_t)geo_serial_pop32(st);
     cdda_audio_lba = geo_serial_pop32(st);
     cdda_playing = geo_serial_pop8(st);

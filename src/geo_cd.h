@@ -31,13 +31,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #ifndef GEO_CD_H
 #define GEO_CD_H
 
-// CD IRQ level (M68K interrupt level 2)
-#define IRQ_CD      0x02
-
-// Pending interrupt sources
-#define CD_INT_DECODER       0x01
-#define CD_INT_COMMUNICATION 0x02
-
 void geo_cd_irq_set(uint8_t bits);
 void geo_cd_irq_clear(uint8_t bits);
 uint8_t geo_cd_irq_pending(void);
@@ -70,15 +63,8 @@ void geo_cd_state_save(uint8_t *st);
 size_t geo_cd_state_size(void);
 
 // RAM access for save data and memory maps
-const void* geo_cd_backup_ram_ptr(void);
+const void* geo_cd_bram_ptr(void);
 const void* geo_cd_pram_ptr(void);
-
-// BIOS family detection
-#define CD_BIOS_UNKNOWN     0
-#define CD_BIOS_FRONT       1
-#define CD_BIOS_TOP         2
-#define CD_BIOS_CDZ         3
-#define CD_BIOS_UNI         4
 
 int geo_cd_detect_bios(uint8_t *bios, size_t sz);
 void geo_cd_set_speed_hack(int enabled);

@@ -51,11 +51,16 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define IRQ_VBLANK  0x01
 #define IRQ_TIMER   0x02
 #define IRQ_RESET   0x03
+#define IRQ_CD      0x02
 
 #define IRQ_TIMER_ENABLED       0x10
 #define IRQ_TIMER_RELOAD_WRITE  0x20
 #define IRQ_TIMER_RELOAD_VBLANK 0x40
 #define IRQ_TIMER_RELOAD_COUNT0 0x80
+
+// Pending interrupt sources
+#define CD_INT_DECODER       0x01
+#define CD_INT_COMMUNICATION 0x02
 
 void geo_m68k_init(void);
 void geo_m68k_reset(void);

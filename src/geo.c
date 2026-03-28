@@ -706,7 +706,7 @@ const void* geo_mem_ptr(unsigned type, size_t *sz) {
         }
         case GEO_MEMTYPE_CDBRAM: {
             if (sz) *sz = SIZE_8K;
-            return geo_cd_backup_ram_ptr();
+            return geo_cd_bram_ptr();
         }
     }
 
