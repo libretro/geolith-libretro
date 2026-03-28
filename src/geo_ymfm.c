@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2022-2024 Rupert Carmichael
+Copyright (c) 2022-2026 Rupert Carmichael
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -48,7 +48,6 @@ static romdata_t *romdata = NULL;
 static int16_t ymbuf[SIZE_YMBUF];
 static size_t bufpos;
 static int32_t busytimer;
-static int32_t busyfrac;
 static int32_t timer[2];
 static int32_t output[3];
 
@@ -76,39 +75,16 @@ void ymfm_sync_check_interrupts(void) {
 }
 
 void ymfm_set_timer(uint32_t tnum, int32_t duration) {
-    if (duration >= 0) {
-        /* Convert from YM2610 clocks to ticks based on the divisor. Ensure
-           a minimum of 1 tick — short timer periods that divide to 0 would
-           otherwise cause the timer to never fire again after reload.
-        */
-        int32_t ticks = duration / DIVISOR;
-        if (ticks == 0)
-            ticks = 1;
-
-        /* If the timer was disabled (-1), set it directly rather than
-           accumulating onto the negative value.
-        */
-        if (timer[tnum] < 0)
-            timer[tnum] = ticks;
-        else
-            timer[tnum] += ticks;
-    }
-    else { // Negative duration (-1) means the timer is disabled
-        timer[tnum] = duration;
-    }
+    timer[tnum] = duration;
 }
 
 void ymfm_set_busy_end(uint32_t clocks) {
-    busytimer += clocks / DIVISOR;
-    busyfrac += clocks % DIVISOR;
-    if (busyfrac >= DIVISOR) {
-        ++busytimer;
-        busyfrac -= DIVISOR;
-    }
+    // Store full-resolution busy duration
+    busytimer += clocks;
 }
 
 bool ymfm_is_busy(void) {
-    return busytimer ? true : false;
+    return busytimer > 0;
 }
 
 void ymfm_update_irq(bool asserted) {
@@ -116,13 +92,17 @@ void ymfm_update_irq(bool asserted) {
 }
 
 static inline void geo_ymfm_timer_tick(void) {
-    if (busytimer)
-        --busytimer;
+    if (busytimer > 0) {
+        busytimer -= DIVISOR;
+        if (busytimer < 0)
+            busytimer = 0;
+    }
 
     for (int i = 0; i < 2; ++i) {
         if (timer[i] < 0)
             continue;
-        else if (--timer[i] == 0)
+        timer[i] -= DIVISOR;
+        if (timer[i] <= 0)
             fm_engine_timer_expired(i);
     }
 }
@@ -173,9 +153,12 @@ void geo_ymfm_adpcm_wrap(int w) {
 }
 
 // States
-void geo_ymfm_state_load(uint8_t *st) {
+void geo_ymfm_state_load(uint8_t *st, unsigned ver) {
     busytimer = geo_serial_pop32(st);
-    busyfrac = geo_serial_pop32(st);
+    if (ver == 0x00) {
+        busytimer *= DIVISOR; // Best effort
+        geo_serial_pop32(st); // Empty, was busyfrac
+    }
     timer[0] = geo_serial_pop32(st);
     timer[1] = geo_serial_pop32(st);
     opn_state_load(st);
@@ -185,7 +168,6 @@ void geo_ymfm_state_load(uint8_t *st) {
 
 void geo_ymfm_state_save(uint8_t *st) {
     geo_serial_push32(st, busytimer);
-    geo_serial_push32(st, busyfrac);
     geo_serial_push32(st, timer[0]);
     geo_serial_push32(st, timer[1]);
     opn_state_save(st);

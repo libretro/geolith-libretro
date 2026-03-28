@@ -52,7 +52,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define MCYC_PER_FRAME (MCYC_PER_LINE * 264) // 405504
 
 #define SIZE_STATE_CART 485305
-#define SIZE_STATE_DISC 7835614
+#define SIZE_STATE_DISC 7835610
 
 // Log callback
 void (*geo_log)(int, const char *, ...);
@@ -507,9 +507,8 @@ int geo_state_load_raw(const void *sstate) {
     geo_serial_begin();
 
     uint32_t stver = 0;
-    (void)stver; // This variable remains unused for now
     if ((geo_serial_peek32(st) & 0xffffff00) == 0x47454f00) // G E O '0'
-        stver = geo_serial_pop32(st);
+        stver = geo_serial_pop32(st) & 0xff;
     else
         geo_log(GEO_LOG_WRN, "No state signature, success not guaranteed\n");
 
@@ -543,7 +542,7 @@ int geo_state_load_raw(const void *sstate) {
     geo_lspc_state_load(st);
     geo_m68k_state_load(st);
     geo_rtc_state_load(st);
-    geo_ymfm_state_load(st);
+    geo_ymfm_state_load(st, stver);
     geo_z80_state_load(st);
 
     if (ngsys.cdmode) {
