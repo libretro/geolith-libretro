@@ -1287,7 +1287,7 @@ bool retro_load_game(const struct retro_game_info *info) {
             { RETRO_MEMDESC_SAVE_RAM,   NULL, 0, 0x800000, 0, 0, SIZE_8K, "BRAM" },
         };
         cd_descs[0].ptr = (void*)geo_cd_pram_ptr();
-        cd_descs[1].ptr = (void*)geo_cd_backup_ram_ptr();
+        cd_descs[1].ptr = (void*)geo_cd_bram_ptr();
 
         struct retro_memory_map cd_mmap = {
             cd_descs, sizeof(cd_descs) / sizeof(cd_descs[0])
@@ -1359,7 +1359,7 @@ void *retro_get_memory_data(unsigned id) {
     switch (id) {
         case RETRO_MEMORY_SAVE_RAM: {
             if (cd_mode)
-                return (void*)geo_cd_backup_ram_ptr();
+                return (void*)geo_cd_bram_ptr();
             return NULL;
         }
         case RETRO_MEMORY_SYSTEM_RAM: {
