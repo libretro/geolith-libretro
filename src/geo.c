@@ -295,6 +295,16 @@ int geo_bios_load_mem(void *data, size_t size) {
     return geo_bios_load(&zip_archive);
 }
 
+int geo_bios_load_mem_aux(void *data, size_t size) {
+    mz_zip_archive zip_archive;
+    memset(&zip_archive, 0, sizeof(zip_archive));
+
+    // Make sure it's actually a zip file
+    if (!mz_zip_reader_init_mem(&zip_archive, data, size, 0))
+        return 0;
+    return geo_bios_load_aux(&zip_archive);
+}
+
 // Load a zipped collection of System ROM data from a file
 int geo_bios_load_file(const char *biospath) {
     mz_zip_archive zip_archive;
