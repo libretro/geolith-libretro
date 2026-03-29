@@ -1,12 +1,15 @@
 geolith-libretro
 ----------------
-Geolith is a highly accurate emulator for the Neo Geo AES and MVS.
+Geolith is a highly accurate emulator for the Neo Geo AES, MVS, CD, and CDZ.
 
-This emulator supports TerraOnion's .NEO file format only.
+Cartridge systems support TerraOnion's .NEO file format only.
 
-BIOS files from a recent MAME set are required:
+CD systems support .bin/.cue and .chd format disc images.
+
  - aes.zip for Neo Geo AES (Home Console)
- - neogeo.zip for Neo Geo MVS (Arcade) and Unibios
+ - neogeo.zip for Neo Geo MVS (Arcade) and Universe BIOS
+ - neocd.zip and neocdz.zip for Neo Geo CD (both files required)
+ - neocdz.zip for Neo Geo CDZ and CD Universe BIOS
 
 This is the libretro port of the Geolith emulator, whose upstream repository
 lives at: https://gitlab.com/jgemu/geolith
@@ -71,7 +74,8 @@ maintainable, and free of regressions.
 Copyright
 ---------
 Geolith (BSD-3-Clause)
-  Copyright (c) 2022-2024 Rupert Carmichael
+  Copyright (c) 2022-2026 Rupert Carmichael
+  Copyright (c) 2026 Romain Tisserand (Neo Geo CD)
   See LICENSE
 
 Jolly Good Z80 (MIT)
