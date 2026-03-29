@@ -83,7 +83,6 @@ static const char *savedir;
 
 // Variables for managing the libretro port
 static int bitmasks = 0;
-static int vfs = 0;
 static int systype = SYSTEM_AES;
 static int unihw = SYSTEM_MVS;
 static int region = REGION_US;
@@ -617,6 +616,38 @@ static int geo_savedata_save_vfs(unsigned datatype, const char *filename) {
     return 1; // Success!
 }
 
+// Read a file into a newly allocated buffer via libretro VFS
+static void* geo_retro_file_read(const char *path, int64_t *size) {
+    RFILE *file = filestream_open(path,
+        RETRO_VFS_FILE_ACCESS_READ, RETRO_VFS_FILE_ACCESS_HINT_NONE);
+
+    if (!file)
+        return NULL;
+
+    filestream_seek(file, 0, RETRO_VFS_SEEK_POSITION_END);
+    int64_t sz = filestream_tell(file);
+    filestream_seek(file, 0, RETRO_VFS_SEEK_POSITION_START);
+
+    void *buf = malloc(sz);
+    if (!buf) {
+        filestream_close(file);
+        return NULL;
+    }
+
+    if (filestream_read(file, buf, sz) != sz) {
+        free(buf);
+        filestream_close(file);
+        return NULL;
+    }
+
+    filestream_close(file);
+
+    if (size)
+        *size = sz;
+
+    return buf;
+}
+
 static void check_variables(bool first_run) {
     struct retro_variable var = {0};
 
@@ -896,14 +927,12 @@ void retro_init(void) {
     if (environ_cb(RETRO_ENVIRONMENT_GET_INPUT_BITMASKS, NULL))
         bitmasks = 1;
 
-    // Check if the frontend supports VFS
+    // Initialize VFS if the frontend supports it
     struct retro_vfs_interface_info vfs_iface_info;
     vfs_iface_info.required_interface_version = 1;
     vfs_iface_info.iface = NULL;
-    if (environ_cb(RETRO_ENVIRONMENT_GET_VFS_INTERFACE, &vfs_iface_info)) {
+    if (environ_cb(RETRO_ENVIRONMENT_GET_VFS_INTERFACE, &vfs_iface_info))
         filestream_vfs_init(&vfs_iface_info);
-        vfs = 1;
-    }
 
     // Set initial core options
     check_variables(true);
@@ -1151,18 +1180,28 @@ bool retro_load_game(const struct retro_game_info *info) {
             systype ? "neogeo.zip" : "aes.zip");
     }
 
-    if (!geo_bios_load_file(biospath)) {
-        log_cb(RETRO_LOG_ERROR, "Failed to load bios at: %s\n", biospath);
-        return false;
+    {
+        int64_t biossz = 0;
+        void *biosdata = geo_retro_file_read(biospath, &biossz);
+        if (!biosdata || !geo_bios_load_mem(biosdata, biossz)) {
+            free(biosdata);
+            log_cb(RETRO_LOG_ERROR, "Failed to load bios at: %s\n", biospath);
+            return false;
+        }
+        free(biosdata);
     }
 
     // Neo Geo CD needs to load "000-lo.lo" from neocdz.zip
     if (systype == SYSTEM_CDF || systype == SYSTEM_CDT) {
         snprintf(biospath, sizeof(biospath), "%s%cneocdz.zip", sysdir, pss);
-        if (!geo_bios_load_file_aux(biospath)) {
+        int64_t biossz = 0;
+        void *biosdata = geo_retro_file_read(biospath, &biossz);
+        if (!biosdata || !geo_bios_load_mem_aux(biosdata, biossz)) {
+            free(biosdata);
             log_cb(RETRO_LOG_ERROR, "Failed to load bios at: %s\n", biospath);
             return false;
         }
+        free(biosdata);
     }
 
     if (cd_mode) {
@@ -1189,30 +1228,13 @@ bool retro_load_game(const struct retro_game_info *info) {
         }
         else if (info->path) {
             // need_fullpath is true, so load from path
-            FILE *f = fopen(info->path, "rb");
-            if (!f) {
-                log_cb(RETRO_LOG_ERROR, "Failed to open ROM: %s\n", info->path);
-                retro_unload_game();
-                return false;
-            }
-            fseek(f, 0, SEEK_END);
-            long sz = ftell(f);
-            fseek(f, 0, SEEK_SET);
-            romdata = (void*)calloc(1, sz);
+            int64_t sz = 0;
+            romdata = geo_retro_file_read(info->path, &sz);
             if (!romdata) {
-                fclose(f);
-                retro_unload_game();
-                return false;
-            }
-            if (fread(romdata, 1, sz, f) != (size_t)sz) {
-                free(romdata);
-                romdata = NULL;
-                fclose(f);
                 log_cb(RETRO_LOG_ERROR, "Failed to read ROM: %s\n", info->path);
                 retro_unload_game();
                 return false;
             }
-            fclose(f);
 
             if (!geo_neo_load(romdata, sz)) {
                 log_cb(RETRO_LOG_ERROR, "Failed to load ROM\n");
@@ -1241,9 +1263,7 @@ bool retro_load_game(const struct retro_game_info *info) {
         snprintf(savename, sizeof(savename), "%s%c%s.%s",
             savedir, pss, gamename, fext[i]);
 
-        int savestat = vfs ?
-            geo_savedata_load_vfs(i, (const char*)savename) :
-            geo_savedata_load(i, (const char*)savename);
+        int savestat = geo_savedata_load_vfs(i, (const char*)savename);
 
         if (savestat == 1)
             log_cb(RETRO_LOG_DEBUG, "Loaded: %s\n", savename);
@@ -1313,9 +1333,7 @@ void retro_unload_game(void) {
         snprintf(savename, sizeof(savename), "%s%c%s.%s",
             savedir, pss, gamename, fext[i]);
 
-        int savestat = vfs ?
-            geo_savedata_save_vfs(i, (const char*)savename) :
-            geo_savedata_save(i, (const char*)savename);
+        int savestat = geo_savedata_save_vfs(i, (const char*)savename);
 
         if (savestat == 1)
             log_cb(RETRO_LOG_DEBUG, "Saved: %s\n", savename);
