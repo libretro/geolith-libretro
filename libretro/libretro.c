@@ -1279,12 +1279,18 @@ bool retro_load_game(const struct retro_game_info *info) {
     geo_reset(1);
 
     // Expose memory maps for RetroArch cheats/achievements
-    if (cd_mode) {
+    /* https://github.com/RetroAchievements/rcheevos/issues/302
+     * This issue needs to be addressed before achievements can be enabled in
+     * a reliable and working state.
+    */
+    /*if (cd_mode) {
         static struct retro_memory_descriptor cd_descs[] = {
             // Program RAM: 0x000000-0x1FFFFF (2MB)
-            { RETRO_MEMDESC_SYSTEM_RAM, NULL, 0, 0x000000, 0, 0, SIZE_2M, "PRAM" },
+            { RETRO_MEMDESC_SYSTEM_RAM,
+                NULL, 0, 0x000000, 0, 0, SIZE_2M, "PRAM" },
             // Backup RAM: 0x800000-0x801FFF (8K, odd bytes only)
-            { RETRO_MEMDESC_SAVE_RAM,   NULL, 0, 0x800000, 0, 0, SIZE_8K, "BRAM" },
+            { RETRO_MEMDESC_SAVE_RAM,
+                NULL, 0, 0x800000, 0, 0, SIZE_8K, "BRAM" },
         };
         cd_descs[0].ptr = (void*)geo_cd_pram_ptr();
         cd_descs[1].ptr = (void*)geo_cd_bram_ptr();
@@ -1293,7 +1299,7 @@ bool retro_load_game(const struct retro_game_info *info) {
             cd_descs, sizeof(cd_descs) / sizeof(cd_descs[0])
         };
         environ_cb(RETRO_ENVIRONMENT_SET_MEMORY_MAPS, &cd_mmap);
-    }
+    }*/
 
     return true;
 }
