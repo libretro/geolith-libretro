@@ -155,7 +155,7 @@ static int geo_chd_parse_toc(void) {
         prev_was_data = !is_audio;
         num_tracks = i + 1;
 
-        geo_log(GEO_LOG_INF, "CHD Track %u: type=%s frames=%u cd_start=%u chd_start=%u pregap=%u\n",
+        geo_log(GEO_LOG_DBG, "CHD Track %u: type=%s frames=%u cd_start=%u chd_start=%u pregap=%u\n",
             tracknum, type, track_len, tracks[i].start, tracks[i].chd_start, pregap);
     }
 

@@ -2016,7 +2016,7 @@ void geo_cd_postload(void) {
     // Detect BIOS family and apply patches
     if (romdata->b && romdata->bsz >= SIZE_512K) {
         bios_family = geo_cd_detect_bios(romdata->b, romdata->bsz);
-        geo_log(GEO_LOG_INF,
+        geo_log(GEO_LOG_DBG,
             "CD BIOS family: %s (SP=%02x%02x%02x%02x vec6C=%02x%02x%02x%02x)\n",
             bios_family == CD_BIOS_CDZ ? "CDZ" :
             bios_family == CD_BIOS_UNI ? "CD Universe BIOS" :

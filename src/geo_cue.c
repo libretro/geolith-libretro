@@ -189,29 +189,6 @@ static uint32_t parse_msf(const char *str) {
     return msf_to_frames(m, s, f);
 }
 
-// Strip leading/trailing whitespace and quotes from a string in-place
-/*static void strip_quotes(char *str) {
-    // Skip leading whitespace
-    char *start = str;
-    while (*start && isspace((unsigned char)*start))
-        ++start;
-
-    // Remove surrounding quotes
-    size_t len = strlen(start);
-    if (len >= 2 && start[0] == '"' && start[len - 1] == '"') {
-        start[len - 1] = '\0';
-        ++start;
-        len -= 2;
-    }
-
-    // Remove trailing whitespace
-    while (len > 0 && isspace((unsigned char)start[len - 1]))
-        start[--len] = '\0';
-
-    if (start != str)
-        memmove(str, start, len + 1);
-}*/
-
 // Get file size for a BIN/ISO file
 static uint32_t file_size_frames(int file_idx) {
     cue_file_t *f = &files[file_idx];
@@ -447,7 +424,7 @@ int geo_cue_open(const char *path) {
 
     // Log
     for (unsigned i = 0; i < num_tracks; ++i) {
-        geo_log(GEO_LOG_INF, "CUE Track %u: type=%s start=%u frames=%u "
+        geo_log(GEO_LOG_DBG, "CUE Track %u: type=%s start=%u frames=%u "
             "pregap=%u file=%d offset=%u\n",
             i + 1,
             tracks[i].type == GEO_DISC_TRACK_AUDIO ? "AUDIO" : "DATA",
