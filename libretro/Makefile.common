@@ -1,11 +1,12 @@
 INCFLAGS := -I$(CORE_DIR)/deps -I$(CORE_DIR)/deps/libretro-common/include \
 	-I$(CORE_DIR)/deps/miniz -I$(CORE_DIR)/deps/lzma/include \
+	-I$(CORE_DIR)/deps/zstd/lib \
 	-I$(CORE_DIR)/src -I$(CORE_DIR)/libretro
 
 ifeq ($(platform),unix)
 LIBS += -lm -lz -lzstd
 FLAGS += -DHAVE_ZLIB -DHAVE_7ZIP -DHAVE_DR_FLAC -DHAVE_FLAC -DHAVE_ZSTD \
-	-DHAVE_CHDR
+	-DZSTD_DISABLE_ASM -DHAVE_CHDR
 endif
 
 SOURCES_C := \
@@ -37,6 +38,15 @@ SOURCES_C := \
 	$(CORE_DIR)/deps/lzma/src/LzmaEnc.c \
 	$(CORE_DIR)/deps/miniz/miniz.c \
 	$(CORE_DIR)/deps/speex/resample.c \
+	$(CORE_DIR)/deps/zstd/lib/common/entropy_common.o \
+	$(CORE_DIR)/deps/zstd/lib/common/error_private.o \
+	$(CORE_DIR)/deps/zstd/lib/common/fse_decompress.o \
+	$(CORE_DIR)/deps/zstd/lib/common/zstd_common.o \
+	$(CORE_DIR)/deps/zstd/lib/common/xxhash.o \
+	$(CORE_DIR)/deps/zstd/lib/decompress/huf_decompress.o \
+	$(CORE_DIR)/deps/zstd/lib/decompress/zstd_ddict.o \
+	$(CORE_DIR)/deps/zstd/lib/decompress/zstd_decompress.o \
+	$(CORE_DIR)/deps/zstd/lib/decompress/zstd_decompress_block.o \
 	$(CORE_DIR)/src/geo.c \
 	$(CORE_DIR)/src/geo_cd.c \
 	$(CORE_DIR)/src/geo_chd.c \
