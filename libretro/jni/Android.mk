@@ -1,3 +1,4 @@
+APP_PLATFORM := android-18
 LOCAL_PATH := $(call my-dir)
 
 ROOT_DIR := $(LOCAL_PATH)/../..
@@ -5,8 +6,7 @@ CORE_DIR := $(ROOT_DIR)
 
 include $(ROOT_DIR)/libretro/Makefile.common
 
-COREFLAGS := -DANDROID -D__LIBRETRO__ -DZ7_ST -DZ7_DONT_USE_HANDLER_GETAUXVAL \
-    $(INCFLAGS) $(FLAGS)
+COREFLAGS := -DANDROID -D__LIBRETRO__ -DZ7_ST $(INCFLAGS) $(FLAGS)
 
 GIT_VERSION := " $(shell git rev-parse --short HEAD || echo unknown)"
 ifneq ($(GIT_VERSION)," unknown")
