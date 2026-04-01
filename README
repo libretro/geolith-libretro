@@ -6,6 +6,7 @@ Cartridge systems support TerraOnion's .NEO file format only.
 
 CD systems support .bin/.cue and .chd format disc images.
 
+BIOS files from a recent MAME set are required:
  - aes.zip for Neo Geo AES (Home Console)
  - neogeo.zip for Neo Geo MVS (Arcade) and Universe BIOS
  - neocd.zip and neocdz.zip for Neo Geo CD (both files required)
