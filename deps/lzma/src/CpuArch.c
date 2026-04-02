@@ -791,6 +791,10 @@ BoolInt CPU_IsSupported_AES (void) { return APPLE_CRYPTO_SUPPORT_VAL; }
   #endif
 #endif
 
+#if defined(__ANDROID__)
+#undef Z7_GETAUXV_AVAILABLE
+#endif
+
 #ifdef Z7_GETAUXV_AVAILABLE
 // #pragma message("=== Z7_GETAUXV_AVAILABLE === ")
 #include <sys/auxv.h>
