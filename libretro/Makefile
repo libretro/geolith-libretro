@@ -667,11 +667,11 @@ ifneq (,$(findstring msvc,$(platform)))
    CFLAGS   += -MT
    CXXFLAGS += -MT
 endif
-   CFLAGS   += -O2 -DNDEBUG
-   CXXFLAGS += -O2 -DNDEBUG
+   CFLAGS   += -O2 -flto -DNDEBUG
+   CXXFLAGS += -O2 -flto -DNDEBUG
 endif
 
-LDFLAGS += $(fpic) $(SHARED)
+LDFLAGS += $(fpic) $(SHARED) -flto
 FLAGS += $(fpic) 
 FLAGS += $(INCFLAGS)
 FLAGS += $(EXTRA_INCLUDES) 
