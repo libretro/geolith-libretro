@@ -536,13 +536,13 @@ static int geo_savedata_load_vfs(unsigned datatype, const char *filename) {
         case GEO_SAVEDATA_CARTRAM: {
             if (!ngsys.sram_present || ngsys.cdmode)
                 return 2;
-           dataptr = geo_mem_ptr(GEO_MEMTYPE_CARTRAM, &datasize);
+            dataptr = geo_mem_ptr(GEO_MEMTYPE_CARTRAM, &datasize);
             break;
         }
         case GEO_SAVEDATA_MEMCARD: {
             if (ngsys.cdmode)
                 return 2;
-           dataptr = geo_mem_ptr(GEO_MEMTYPE_MEMCARD, &datasize);
+            dataptr = geo_mem_ptr(GEO_MEMTYPE_MEMCARD, &datasize);
             break;
         }
         default: return 2;
