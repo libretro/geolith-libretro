@@ -528,17 +528,21 @@ static int geo_savedata_load_vfs(unsigned datatype, const char *filename) {
 
     switch (datatype) {
         case GEO_SAVEDATA_NVRAM: {
-            if (geo_get_system() == SYSTEM_AES)
+            if (geo_get_system() == SYSTEM_AES || ngsys.cdmode)
                 return 2;
             dataptr = geo_mem_ptr(GEO_MEMTYPE_NVRAM, &datasize);
             break;
         }
         case GEO_SAVEDATA_CARTRAM: {
-            dataptr = geo_mem_ptr(GEO_MEMTYPE_CARTRAM, &datasize);
+            if (!ngsys.sram_present || ngsys.cdmode)
+                return 2;
+           dataptr = geo_mem_ptr(GEO_MEMTYPE_CARTRAM, &datasize);
             break;
         }
         case GEO_SAVEDATA_MEMCARD: {
-            dataptr = geo_mem_ptr(GEO_MEMTYPE_MEMCARD, &datasize);
+            if (ngsys.cdmode)
+                return 2;
+           dataptr = geo_mem_ptr(GEO_MEMTYPE_MEMCARD, &datasize);
             break;
         }
         default: return 2;
