@@ -489,8 +489,19 @@ void geo_lspc_mode_wr(uint16_t data) {
        Bits 0-2:  Unused
     */
     lspc.aa_reload = (data >> 8);
-    ngsys.irq2_ctrl = data & 0xf0;
     lspc.aa_disable = data & 0x08;
+
+    /* When the "Timer IRQ Reload at VBLANK" bit is freshly set during the
+       VBLANK period, reload the counter immediately.
+    */
+    uint8_t prev_ctrl = ngsys.irq2_ctrl;
+    ngsys.irq2_ctrl = data & 0xf0;
+
+    if (!(prev_ctrl & IRQ_TIMER_RELOAD_VBLANK) &&
+        (ngsys.irq2_ctrl & IRQ_TIMER_RELOAD_VBLANK) &&
+        lspc.scanline >= LSPC_LINE_BORDER_BOTTOM) {
+        ngsys.irq2_counter = ngsys.irq2_reload;
+    }
 }
 
 // Write to REG_SHADOW
