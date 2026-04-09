@@ -311,9 +311,11 @@ int geo_neo_load(void *data, size_t size) {
                 geo_m68k_board_set(BOARD_PVC);
 
             /* This game will trigger watchdog early in some cases before the
-               bonus level.
+               bonus level. Hardware verification or an audit of 68K CPU timing
+               will be required to understand if this is an emulation or game
+               bug.
             */
-            geo_set_watchdog_frames(9);
+            geo_set_watchdog_tolerance(10000); // Allow 10K more cycles
             break;
         }
         case 0x271: { // KOF 2003

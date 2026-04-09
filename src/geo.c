@@ -50,6 +50,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #define MCYC_PER_LINE 1536
 #define MCYC_PER_FRAME (MCYC_PER_LINE * 264) // 405504
+#define WATCHDOG_MCYCS 3244030
 
 #define SIZE_STATE_CART 485305
 #define SIZE_STATE_DISC 7835610
@@ -87,8 +88,8 @@ unsigned irq2_fragmask = 0x01;
 unsigned irq_vbl_level = IRQ_VBLANK;
 unsigned irq_timer_level = IRQ_TIMER;
 
-// Watchdog Frames
-static unsigned watchdog_frames = 8;
+// Watchdog Cycles
+static uint32_t watchdog_cycs = WATCHDOG_MCYCS;
 static uint8_t watchdog_enabled = 0;
 
 // Set the log callback
@@ -133,12 +134,14 @@ void geo_set_div68k(int d) {
     irq2_fragmask = oc ? 0x03 : 0x01;
 }
 
+// Set the ADPCM Wrap behaviour on or off
 void geo_set_adpcm_wrap(int w) {
     geo_ymfm_adpcm_wrap(w);
 }
 
-void geo_set_watchdog_frames(unsigned w) {
-    watchdog_frames = w;
+// Set a positive or negative tolerance adjustment to the watchdog counter
+void geo_set_watchdog_tolerance(int t) {
+    watchdog_cycs += t;
 }
 
 romdata_t* geo_romdata_ptr(void) {
@@ -475,7 +478,7 @@ void geo_init(void) {
     ngsys.irq2_frags = 0;
     ngsys.irq2_dec = 0;
 
-    watchdog_frames = 8;
+    watchdog_cycs = WATCHDOG_MCYCS;
     watchdog_enabled = 1;
     irq_vbl_level = IRQ_VBLANK;
     irq_timer_level = IRQ_TIMER;
@@ -723,19 +726,15 @@ const void* geo_mem_ptr(unsigned type, size_t *sz) {
 }
 
 // Increment the watchdog counter
-static inline void geo_watchdog_increment(void) {
+static inline void geo_watchdog_increment(unsigned cycs) {
     /* If 8 frames have passed since the Watchdog was kicked, assume a bug or
-       or hardware fault and recover by resetting the system. The true number
-       of cycles needed for this to happen in hardware is 3244030, or slightly
-       under 8 frames of video. Currently there is a single case where the
-       watchdog can be kicked a few cycles too early. Hardware verification
-       or an audit of 68K CPU timing will be required to understand the root
-       cause.
+       or hardware fault and recover by resetting the system.
     */
     if (!watchdog_enabled)
         return;
 
-    if (++ngsys.watchdog >= watchdog_frames) {
+    ngsys.watchdog += cycs;
+    if (ngsys.watchdog >= watchdog_cycs) {
         geo_log(GEO_LOG_WRN, "Watchdog reset\n");
         geo_reset(0);
     }
@@ -757,6 +756,9 @@ void geo_exec(void) {
     while (mcycs < MCYC_PER_FRAME) {
         icycs = geo_m68k_run(1);
         mcycs += (icycs * DIV_M68K) >> oc;
+
+        // Watchdog counts real time, always at the base clock rate
+        geo_watchdog_increment(icycs * DIV_M68K);
 
         // If this is an arcade system, update the RTC
         if (ngsys.sys == SYSTEM_MVS || ngsys.sys == SYSTEM_UNI)
@@ -818,7 +820,4 @@ void geo_exec(void) {
 
     if (ngsys.cdmode)
         geo_cd_frame_end();
-
-    // Increment the Watchdog counter at the end of each frame
-    geo_watchdog_increment();
 }
