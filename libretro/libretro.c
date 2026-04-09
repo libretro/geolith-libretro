@@ -523,6 +523,9 @@ static void geo_geom_refresh(void) {
 
 // Load NVRAM, Cartridge RAM, or Memory Card data
 static int geo_savedata_load_vfs(unsigned datatype, const char *filename) {
+    if (ngsys.cdmode)
+        return 2;
+
     const uint8_t *dataptr = NULL;
     size_t datasize = 0;
 
@@ -579,6 +582,9 @@ static int geo_savedata_load_vfs(unsigned datatype, const char *filename) {
 
 // Save NVRAM, Cartridge RAM, or Memory Card data
 static int geo_savedata_save_vfs(unsigned datatype, const char *filename) {
+    if (ngsys.cdmode)
+        return 2;
+
     const uint8_t *dataptr = NULL;
     size_t datasize = 0;
 
