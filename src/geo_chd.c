@@ -106,13 +106,15 @@ static int geo_chd_parse_toc(void) {
 
         // Try CHTR2 format first
         int parsed = sscanf(metadata,
-            "TRACK:%u TYPE:%63s SUBTYPE:%63s FRAMES:%u PREGAP:%u PGTYPE:%63s PGSUB:%63s POSTGAP:%u",
-            &tracknum, type, subtype, &frames, &pregap, pgtype, pgsub,
-            &postgap);
+            "TRACK:%u TYPE:%63s SUBTYPE:%63s FRAMES:%u PREGAP:%u PGTYPE:%63s "
+                "PGSUB:%63s POSTGAP:%u",
+                &tracknum, type, subtype, &frames, &pregap, pgtype, pgsub,
+                &postgap);
 
         if (parsed < 4) {
             // Try CHTR format
-            parsed = sscanf(metadata, "TRACK:%u TYPE:%63s SUBTYPE:%63s FRAMES:%u",
+            parsed = sscanf(metadata, "TRACK:%u TYPE:%63s SUBTYPE:%63s "
+                "FRAMES:%u",
                 &tracknum, type, subtype, &frames);
 
             if (parsed < 4)
@@ -155,8 +157,11 @@ static int geo_chd_parse_toc(void) {
         prev_was_data = !is_audio;
         num_tracks = i + 1;
 
-        geo_log(GEO_LOG_DBG, "CHD Track %u: type=%s frames=%u cd_start=%u chd_start=%u pregap=%u\n",
-            tracknum, type, track_len, tracks[i].start, tracks[i].chd_start, pregap);
+        geo_log(GEO_LOG_DBG,
+            "CHD Track %u: type=%s frames=%u cd_start=%u chd_start=%u "
+            "pregap=%u\n",
+            tracknum, type, track_len, tracks[i].start, tracks[i].chd_start,
+            pregap);
     }
 
     leadout_lba = cdPos;
