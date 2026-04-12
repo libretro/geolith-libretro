@@ -74,6 +74,7 @@ static int detect_backend(const char *path) {
 #endif
 }
 
+// Reset all function pointers to NULL
 static void clear_dispatch(void) {
     fn_read_sector = NULL;
     fn_read_audio = NULL;
@@ -85,12 +86,29 @@ static void clear_dispatch(void) {
     fn_close = NULL;
 }
 
-static unsigned stub_num_tracks(void) { return 0; }
-static int stub_read(uint32_t lba, uint8_t *buf) { (void)lba; (void)buf; return 0; }
-static int stub_read_audio(uint32_t lba, int16_t *buf) { (void)lba; (void)buf; return 0; }
-static int stub_track_is_audio(unsigned t) { (void)t; return 0; }
-static uint32_t stub_track_u32(unsigned t) { (void)t; return 0; }
-static uint32_t stub_leadout(void) { return 0; }
+static unsigned stub_num_tracks(void) {
+    return 0;
+}
+
+static int stub_read(uint32_t lba, uint8_t *buf) {
+    (void)lba; (void)buf; return 0;
+}
+
+static int stub_read_audio(uint32_t lba, int16_t *buf) {
+    (void)lba; (void)buf; return 0;
+}
+
+static int stub_track_is_audio(unsigned t) {
+    (void)t; return 0;
+}
+
+static uint32_t stub_track_u32(unsigned t) {
+    (void)t; return 0;
+}
+
+static uint32_t stub_leadout(void) {
+    return 0;
+}
 
 int geo_disc_open(const char *path) {
     int ok = 0;
