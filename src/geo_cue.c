@@ -52,7 +52,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 typedef struct {
     FILE *fp;
-    char path[512];
+    char path[1024];
     int type;           // FTYPE_*
     uint32_t data_off;  // Offset to PCM data (WAV header skip)
     drflac *flac;       // FLAC decoder handle (FTYPE_FLAC only)
@@ -60,7 +60,7 @@ typedef struct {
 
 typedef struct {
     int file_idx;           // Index into files[]
-    uint32_t file_offset;   // Byte offset within the file for this track's start
+    uint32_t file_offset;   // Byte offset within file for start of track
     uint32_t sector_size;   // 2352 (BIN/audio) or 2048 (ISO)
     uint8_t type;           // GEO_DISC_TRACK_DATA or GEO_DISC_TRACK_AUDIO
     uint32_t start;         // CD position (LBA, what BIOS sees) — index 01
@@ -94,7 +94,8 @@ static int strjcasecmp(const char *a, const char *b, size_t n) {
     return 0;
 }
 
-static void set_basedir(const char *cuepath) {
+// Derive the base directory from the full path
+static void geo_cue_set_basedir(const char *cuepath) {
     // Copy path and find last separator
     strncpy(basedir, cuepath, sizeof(basedir) - 1);
     basedir[sizeof(basedir) - 1] = '\0';
@@ -108,7 +109,8 @@ static void set_basedir(const char *cuepath) {
         basedir[0] = '\0';
 }
 
-static int detect_file_type(const char *filename) {
+// Detect type of file being opened
+static int geo_cue_detect_file_type(const char *filename) {
     const char *ext = strrchr(filename, '.');
     if (!ext)
         return FTYPE_BIN;
@@ -122,7 +124,7 @@ static int detect_file_type(const char *filename) {
 }
 
 // Parse WAV header, return offset to PCM data. 0 on failure.
-static uint32_t wav_parse_header(FILE *fp) {
+static uint32_t geo_cue_wav_parse_header(FILE *fp) {
     uint8_t hdr[44];
     if (fread(hdr, 1, 44, fp) != 44)
         return 0;
@@ -145,7 +147,8 @@ static uint32_t wav_parse_header(FILE *fp) {
     }
 }
 
-static int open_file(int idx) {
+// Open a file specified in a cue sheet
+static int geo_cue_open_file(int idx) {
     cue_file_t *f = &files[idx];
 
     if (f->type == FTYPE_FLAC) {
@@ -165,7 +168,7 @@ static int open_file(int idx) {
     }
 
     if (f->type == FTYPE_WAV) {
-        f->data_off = wav_parse_header(f->fp);
+        f->data_off = geo_cue_wav_parse_header(f->fp);
         if (!f->data_off) {
             geo_log(GEO_LOG_ERR, "CUE: Invalid WAV header: %s\n", f->path);
             fclose(f->fp);
@@ -177,20 +180,16 @@ static int open_file(int idx) {
     return 1;
 }
 
-static uint32_t msf_to_frames(unsigned m, unsigned s, unsigned f) {
-    return (m * 60 * 75) + (s * 75) + f;
-}
-
 // Parse MSF timestamp "MM:SS:FF" and return frame count
-static uint32_t parse_msf(const char *str) {
+static uint32_t geo_cue_parse_msf(const char *str) {
     unsigned m, s, f;
     if (sscanf(str, "%u:%u:%u", &m, &s, &f) != 3)
         return 0;
-    return msf_to_frames(m, s, f);
+    return (m * 60 * 75) + (s * 75) + f; // Convert MSF to frames and return
 }
 
 // Get file size for a BIN/ISO file
-static uint32_t file_size_frames(int file_idx) {
+static uint32_t geo_cue_file_size_frames(int file_idx) {
     cue_file_t *f = &files[file_idx];
     uint32_t sector_sz = (f->type == FTYPE_ISO) ? GEO_DISC_DATA_SIZE
                                                  : GEO_DISC_SECTOR_SIZE;
@@ -214,6 +213,7 @@ static uint32_t file_size_frames(int file_idx) {
     return (uint32_t)(size / sector_sz);
 }
 
+// Open a cue sheet
 int geo_cue_open(const char *path) {
     num_files = 0;
     num_tracks = 0;
@@ -222,7 +222,7 @@ int geo_cue_open(const char *path) {
     memset(files, 0, sizeof(files));
     memset(tracks, 0, sizeof(tracks));
 
-    set_basedir(path);
+    geo_cue_set_basedir(path);
 
     FILE *cue = fopen(path, "r");
     if (!cue) {
@@ -269,7 +269,8 @@ int geo_cue_open(const char *path) {
                     flen = sizeof(filename) - 1;
                 memcpy(filename, fname_start + 1, flen);
                 filename[flen] = '\0';
-            } else {
+            }
+            else {
                 // Unquoted: take until next space
                 char *end = strchr(fname_start, ' ');
                 size_t flen = end ? (size_t)(end - fname_start)
@@ -283,9 +284,9 @@ int geo_cue_open(const char *path) {
             // Build full path
             cue_file_t *f = &files[num_files];
             snprintf(f->path, sizeof(f->path), "%s%s", basedir, filename);
-            f->type = detect_file_type(filename);
+            f->type = geo_cue_detect_file_type(filename);
 
-            if (!open_file(num_files)) {
+            if (!geo_cue_open_file(num_files)) {
                 fclose(cue);
                 geo_cue_close();
                 return 0;
@@ -303,6 +304,7 @@ int geo_cue_open(const char *path) {
             if (cur_track >= 0 && tracks[cur_track].frames == 0) {
                 // Previous track runs to end of its file (or to current pos)
                 // Will be finalized at INDEX 01 of next track or at EOF
+                // FIXME - do something here
             }
 
             unsigned tnum;
@@ -319,13 +321,15 @@ int geo_cue_open(const char *path) {
             if (!strjcasecmp(ttype, "AUDIO", 5)) {
                 t->type = GEO_DISC_TRACK_AUDIO;
                 t->sector_size = GEO_DISC_SECTOR_SIZE;
-            } else {
+            }
+            else {
                 t->type = GEO_DISC_TRACK_DATA;
                 // MODE1/2352 or MODE1/2048
                 if (strstr(ttype, "2048") ||
                     files[cur_file].type == FTYPE_ISO) {
                     t->sector_size = GEO_DISC_DATA_SIZE;
-                } else {
+                }
+                else {
                     t->sector_size = GEO_DISC_SECTOR_SIZE;
                 }
             }
@@ -342,7 +346,7 @@ int geo_cue_open(const char *path) {
             if (sscanf(p + 6, "%u %31s", &idx, msf) < 2)
                 continue;
 
-            uint32_t offset = parse_msf(msf);
+            uint32_t offset = geo_cue_parse_msf(msf);
 
             if (idx == 0) {
                 pending_index00 = 1;
@@ -380,7 +384,8 @@ int geo_cue_open(const char *path) {
                     }
                     else if (prev->frames == 0) {
                         // Different file: compute length from file size
-                        uint32_t total = file_size_frames(prev->file_idx);
+                        uint32_t total =
+                            geo_cue_file_size_frames(prev->file_idx);
                         uint32_t start_frame =
                             prev->file_offset / prev->sector_size;
                         prev->frames = total - start_frame;
@@ -393,7 +398,7 @@ int geo_cue_open(const char *path) {
         else if (!strjcasecmp(p, "PREGAP ", 7)) {
             // PREGAP MM:SS:FF — silence pregap (not in file)
             if (cur_track >= 0) {
-                tracks[cur_track].pregap = parse_msf(p + 7);
+                tracks[cur_track].pregap = geo_cue_parse_msf(p + 7);
             }
         }
         // REM, POSTGAP, SONGWRITER, etc. — ignored
@@ -410,8 +415,9 @@ int geo_cue_open(const char *path) {
     // Finalize last track's frame count from file size
     for (unsigned i = 0; i < num_tracks; ++i) {
         if (tracks[i].frames == 0) {
-            uint32_t total = file_size_frames(tracks[i].file_idx);
-            uint32_t start_frame = tracks[i].file_offset / tracks[i].sector_size;
+            uint32_t total = geo_cue_file_size_frames(tracks[i].file_idx);
+            uint32_t start_frame =
+                tracks[i].file_offset / tracks[i].sector_size;
             tracks[i].frames = total - start_frame;
         }
     }
@@ -438,6 +444,7 @@ int geo_cue_open(const char *path) {
     return 1;
 }
 
+// Close a cue sheet
 void geo_cue_close(void) {
     for (unsigned i = 0; i < num_files; ++i) {
         if (files[i].fp) {
@@ -456,7 +463,7 @@ void geo_cue_close(void) {
 }
 
 // Find which track a disc LBA belongs to
-static int find_track(uint32_t disc_lba) {
+static int geo_cue_find_track(uint32_t disc_lba) {
     for (int i = (int)num_tracks - 1; i >= 0; --i) {
         if (disc_lba >= tracks[i].start)
             return i;
@@ -464,8 +471,9 @@ static int find_track(uint32_t disc_lba) {
     return 0;
 }
 
+// Read a sector worth of disc data
 int geo_cue_read_sector(uint32_t disc_lba, uint8_t *buf) {
-    int ti = find_track(disc_lba);
+    int ti = geo_cue_find_track(disc_lba);
     cue_track_t *t = &tracks[ti];
     cue_file_t *f = &files[t->file_idx];
 
@@ -479,7 +487,8 @@ int geo_cue_read_sector(uint32_t disc_lba, uint8_t *buf) {
     if (t->sector_size == GEO_DISC_SECTOR_SIZE) {
         // Raw 2352: skip 16-byte header, read 2048 data bytes directly
         fseek(f->fp, byte_offset + 16, SEEK_SET);
-    } else {
+    }
+    else {
         // ISO 2048: read directly
         fseek(f->fp, byte_offset, SEEK_SET);
     }
@@ -490,8 +499,9 @@ int geo_cue_read_sector(uint32_t disc_lba, uint8_t *buf) {
     return 1;
 }
 
+// Read CDDA audio
 int geo_cue_read_audio(uint32_t disc_lba, int16_t *buf) {
-    int ti = find_track(disc_lba);
+    int ti = geo_cue_find_track(disc_lba);
     cue_track_t *t = &tracks[ti];
     cue_file_t *f = &files[t->file_idx];
 
