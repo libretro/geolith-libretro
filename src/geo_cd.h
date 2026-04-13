@@ -58,9 +58,8 @@ void geo_cd_read_cdda(int16_t *out, size_t nsamples);
 void geo_cd_frame_start(void);
 
 // State serialization
-void geo_cd_state_load(uint8_t *st);
+void geo_cd_state_load(uint8_t *st, unsigned ver);
 void geo_cd_state_save(uint8_t *st);
-size_t geo_cd_state_size(void);
 
 // RAM access for save data and memory maps
 const void* geo_cd_bram_ptr(void);

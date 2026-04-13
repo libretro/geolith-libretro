@@ -70,7 +70,7 @@ static romdata_t romdata;
 
 static uint8_t *state = NULL;
 static size_t state_sz = 0;
-static uint32_t state_version = ('G' << 24) | ('E' << 16) | ('O' << 8) | 0x01;
+static uint32_t state_version = ('G' << 24) | ('E' << 16) | ('O' << 8) | 0x02;
 
 // Cycle counters
 static uint32_t mcycs = 0;
@@ -560,7 +560,7 @@ int geo_state_load_raw(const void *sstate) {
 
     if (ngsys.cdmode) {
         watchdog_enabled = geo_serial_pop8(st);
-        geo_cd_state_load(st);
+        geo_cd_state_load(st, stver);
     }
 
     return 1;

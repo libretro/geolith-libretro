@@ -53,6 +53,7 @@ SOURCES_C := \
 	$(CORE_DIR)/src/geo_chd.c \
 	$(CORE_DIR)/src/geo_cue.c \
 	$(CORE_DIR)/src/geo_disc.c \
+	$(CORE_DIR)/src/geo_lc8951.c \
 	$(CORE_DIR)/src/geo_lspc.c \
 	$(CORE_DIR)/src/geo_m68k.c \
 	$(CORE_DIR)/src/geo_memcard.c \
