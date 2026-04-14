@@ -67,7 +67,7 @@ static romdata_t *romdata = NULL;
 static uint8_t vectable = 0;
 
 // Transfer area (0xE00000) configuration
-static uint8_t reg_transarea = 0;      // 0=SPR, 1=PCM, 4=Z80, 5=FIX
+static uint8_t reg_transarea = 0;      // 0 = SPR, 1 = PCM, 4 = Z80, 5 = FIX
 static uint8_t spr_bank = 0;           // SPR bank (0-3, 1MB each)
 static uint8_t pcm_bank = 0;           // PCM bank (0-1, 512K each)
 
@@ -91,9 +91,26 @@ static uint8_t reg_sramlock = 0;
 // LC8951 CD Controller instance
 static lc8951_t lc;
 
-// =========================================================================
-// CD Communication Protocol
-// =========================================================================
+/* CD Communication Protocol
+   The 68K communicates with the CD drive controller through a nybble-based
+   serial protocol using registers REG_CDDOUTPUT ($FF0163), REG_CDDCTRL
+   ($FF0165), and REG_CDDINPUT ($FF0161). Commands and responses are each
+   5 bytes (10 nybbles), with the last nybble of the 5th byte being a
+   checksum. The protocol is clocked by writing to REG_CDDCTRL to advance
+   the nybble pointer and toggle the strobe signal.
+
+   Command byte 0 (high nybble) selects the operation:
+     0x00 = Status          0x10 = Stop           0x20 = Query TOC
+     0x30 = Play (MSF)      0x40 = Seek           0x50 = Unknown (CDZ)
+     0x60 = Pause           0x70 = Resume
+     0x80 = Scan forward    0x90 = Scan backward   0xB0 = Move to track
+
+   Drive status codes returned in the high nybble of response byte 0:
+     0x00 = Idle            0x10 = Playing         0x20 = Seeking
+     0x30 = Scanning        0x40 = Paused
+     0x90 = Stopped         0xC0 = End of disc
+*/
+
 #define CD_STATUS_IDLE      0x00
 #define CD_STATUS_PLAY      0x10
 #define CD_STATUS_SEEK      0x20
@@ -105,8 +122,8 @@ static lc8951_t lc;
 typedef struct _cdcomm_t {
     uint8_t cmd[5];         // Command packet bytes
     uint8_t status[5];      // Response packet bytes
-    uint8_t cmd_nibble;     // Current nibble in command (0-9)
-    uint8_t stat_nibble;    // Current nibble in response (0-9)
+    uint8_t cmd_nybble;     // Current nybble in command (0-9)
+    uint8_t stat_nybble;    // Current nybble in response (0-9)
     uint8_t strobe;         // Clock strobe state
 
     uint8_t drive_status;   // Current drive state
@@ -118,9 +135,7 @@ typedef struct _cdcomm_t {
 
 static cdcomm_t cd;
 
-// =========================================================================
 // DMA Engine
-// =========================================================================
 typedef struct _cddma_t {
     uint32_t src;
     uint32_t dst;
@@ -132,9 +147,16 @@ typedef struct _cddma_t {
 
 static cddma_t dma;
 
-// =========================================================================
-// CD IRQ state
-// =========================================================================
+/* CD IRQ State
+   The Neo Geo CD uses IRQ level 2 (shared with cartridge timer interrupt)
+   for CD-related interrupts. Two interrupt sources are multiplexed:
+     - Decoder interrupt (Vector 21, bit 5): fired when the LC8951 decodes
+       a sector and DECI is pending. Acknowledged by writing 0x20 to $FF000F.
+     - Communication interrupt (Vector 22, bit 4): fired at the sector rate
+       (~75Hz playing, ~64Hz idle). Acknowledged by writing 0x10 to $FF000F.
+   Both sources require irq_mask1 ($FF0002) to have the appropriate bits set
+   and cd_irq_enabled ($FF0181) to be nonzero.
+*/
 static uint8_t cd_irq_mask = 0;        // FF000F acknowledge bits
 static uint8_t cd_irq_enabled = 0;     // FF0181
 static uint16_t irq_mask1 = 0;         // FF0002: CDROM interrupt mask
@@ -206,9 +228,7 @@ static inline uint16_t reverse_bits_16(uint16_t val) {
     return (bitrev[val & 0xff] << 8) | bitrev[val >> 8];
 }
 
-// =========================================================================
 // CD timing
-// =========================================================================
 #define CD_SECTOR_RATE_IDLE (24000000 / 64)  // ~375000 master cycles (idle)
 #define CD_SECTOR_RATE_1X   (24000000 / 75)  // ~320000 master cycles per sector
 #define CD_SECTOR_RATE_2X   (24000000 / 150) // ~160000 master cycles per sector
@@ -220,7 +240,7 @@ static int speed_hack = 0;
 static int bios_family = CD_BIOS_UNKNOWN;
 static int sector_decoded_this_frame = 0;
 
-// Cached track lookup — avoids repeated forward scans through all tracks
+// Cached track lookup - avoids repeated forward scans through all tracks
 static unsigned cached_track = 1;
 static uint32_t cached_track_start = 0;
 static uint32_t cached_track_end = 0;
@@ -268,9 +288,7 @@ static uint32_t cdda_audio_lba = 0;
 // Master cycle counter within frame for cycle-accurate CDDA sample indexing
 static uint32_t cd_frame_mcycs = 0;
 
-// =========================================================================
 // Helper functions
-// =========================================================================
 static inline uint8_t read08(uint8_t *ptr, uint32_t addr) {
     return ptr[addr];
 }
@@ -293,16 +311,14 @@ static inline uint8_t from_bcd(uint8_t val) {
     return ((val >> 4) * 10) + (val & 0x0f);
 }
 
-// =========================================================================
 // CD Communication Protocol
-// =========================================================================
 static void cd_comm_build_response(void);
 
 static void cd_comm_reset(void) {
     memset(&cd, 0, sizeof(cd));
     cd.drive_status = CD_STATUS_IDLE;
-    cd.cmd_nibble = 0;
-    cd.stat_nibble = 9;
+    cd.cmd_nybble = 0;
+    cd.stat_nybble = 9;
     cd.strobe = 1;
     // Set valid checksum on initial response packet
     cd.status[0] = cd.drive_status;
@@ -608,10 +624,7 @@ static void cd_comm_process_command(void) {
     cd_comm_build_response();
 }
 
-// =========================================================================
 // DMA Implementation
-// =========================================================================
-// Destination types for DMA
 #define DMA_DEST_RAM     0
 #define DMA_DEST_MAPPED  1
 #define DMA_DEST_PALETTE 2
@@ -632,7 +645,7 @@ static int cd_dma_resolve_dest(uint32_t address, uint8_t **dst_ptr,
         return DMA_DEST_RAM;
     }
     else if (address >= 0x400000 && address < 0x800000) {
-        // Palette RAM — handled via geo_lspc_palram_wr16 for color conversion
+        // Palette RAM - handled via geo_lspc_palram_wr16 for colour conversion
         *dst_ptr = (uint8_t*)1; // non-NULL sentinel
         *dst_mask = 0x1fff; // 8K palette entries (16KB / 2)
         return DMA_DEST_PALETTE;
@@ -726,11 +739,26 @@ static void cd_dma_execute(void) {
         return;
     }
 
+    /* DMA Microcode Execution
+       The LC8953 DMA controller uses a programmable microcode architecture.
+       The 16-bit config word (REG_DMA_MODE) determines the transfer mode.
+       Known microcode configurations used by the Neo Geo CD BIOS:
+
+       0xFFC5, 0xFF89: LC8951 -> destination (sector data copy)
+       0xFC2D:         LC8951 -> destination, odd byte expansion
+       0xFE3D, 0xFE6D: RAM -> RAM copy (addr registers are swapped)
+       0xFEF5:         Fill with incrementing addresses
+       0xFFCD, 0xFFDD: Pattern fill
+       0xE2DD, 0xF2DD: RAM -> RAM copy with byte swap (odd byte expansion)
+       0xCFFD:         Fill odd bytes with incrementing addresses
+    */
     switch (dma.config) {
         case 0xffc5:
         case 0xff89: {
-            // Copy from LC8951 circular buffer to destination
-            // Reads big-endian words from buffer[DAC] with 16-bit wrapping
+            /* LC8951 -> Destination: copy decoded sector data
+               Reads big-endian words from LC8951 buffer[DAC] with 16-bit
+               wrapping.
+            */
             if (lc.ifstat & LC_IFSTAT_DTBSY) {
                 geo_log(GEO_LOG_WRN,
                     "DMA %04x: DTRG not written (DTBSY set)\n", dma.config);
@@ -752,7 +780,11 @@ static void cd_dma_execute(void) {
             break;
         }
         case 0xfc2d: {
-            // Copy from LC8951 buffer, odd bytes (2 words per source word)
+            /* LC8951 -> Destination, odd byte expansion
+               Splits each source word into two destination words (high byte,
+               then full word). Used for PCM/Z80/FIX transfers where the
+               destination only accepts the low byte of each word write.
+            */
             if (lc.ifstat & LC_IFSTAT_DTBSY) {
                 geo_log(GEO_LOG_WRN,
                     "DMA fc2d: DTRG not written (DTBSY set)\n");
@@ -775,9 +807,9 @@ static void cd_dma_execute(void) {
             break;
         }
         case 0xfe3d:
-        case 0xfe6d: { // RAM to RAM copy
-            uint32_t src = dma.dst; // Destination register is actually source
-            uint32_t dst = dma.src; // Source register is actually destination
+        case 0xfe6d: { // RAM -> RAM copy (address registers are swapped)
+            uint32_t src = dma.dst; // ADDR1 is actually the source
+            uint32_t dst = dma.src; // ADDR2 is actually the destination
 
             dest_type = cd_dma_resolve_dest(dst, &dst_ptr, &dst_mask);
             if (!dst_ptr) {
@@ -788,7 +820,7 @@ static void cd_dma_execute(void) {
 
             /* Inhibit blank vector table writes (Double Dragon fix):
                Some games zero the vector table before loading real vectors.
-               If we write the zeros, the next interrupt hits address 0 → crash.
+               If we write the zeros, the next interrupt hits address 0 (crash).
             */
             if ((dst & 0xffffff) < 0x80) {
                 int blank = 1;
@@ -823,8 +855,9 @@ static void cd_dma_execute(void) {
         }
         case 0xffcd:
         case 0xffdd: {
-            // Pattern fill
-            // Writes pattern word per iteration via mapped handler
+            /* Pattern fill - Writes pattern word per iteration via mapped
+               handler.
+            */
             uint32_t dst = dma.dst;
             for (uint32_t i = 0; i < dma.len; ++i) {
                 dma_write_word(dst_ptr, dst_mask, &dst, dma.val, dest_type);
@@ -832,12 +865,13 @@ static void cd_dma_execute(void) {
             break;
         }
         case 0xe2dd:
-        case 0xf2dd: { // Copy odd bytes
-            /* Reads word, writes BYTE_SWAP_16(data) then data (2 words per
-               iteration)
+        case 0xf2dd: { // RAM -> RAM copy with byte swap (odd byte expansion)
+            /* Reads each source word, writes BYTE_SWAP_16(data) then data
+               (2 destination words per source word). Used for sprite tile
+               uploads where the tile format requires byte-swapped pairs.
             */
-            uint32_t src = dma.dst; // Destination" is actually source
-            uint32_t dst = dma.src; // Source is actually destination
+            uint32_t src = dma.dst; // ADDR1 is actually the source
+            uint32_t dst = dma.src; // ADDR2 is actually the destination
 
             // Re-resolve destination from the actual destination address
             dest_type = cd_dma_resolve_dest(dst, &dst_ptr, &dst_mask);
@@ -882,32 +916,30 @@ static void cd_dma_execute(void) {
     dma.enabled = 0;
 }
 
-// =========================================================================
 // CD Register Read/Write (0xFF0000 - 0xFF01FF)
-// =========================================================================
 static uint8_t cd_reg_read_8(uint32_t addr) {
     addr &= 0x01ff;
 
     switch (addr) {
-        case 0x000f: // IRQ Acknowledge status
+        case 0x000f: // REG_IRQACK - CD IRQ acknowledge status
             return cd_irq_mask;
 
-        case 0x0017: // Unknown (front loader BIOS)
+        case 0x0017: // Unknown (front loader BIOS reads this)
             return 0x00;
 
-        case 0x0061: // DMA status (bit 6 = busy)
+        case 0x0061: // REG_DMASTART - DMA status (bit 6 = busy)
             return dma.enabled ? 0x40 : 0x00;
 
-        case 0x0103: // LC8951 register data
+        case 0x0103: // LC8951 register data read
             return geo_lc8951_reg_read(&lc);
 
-        case 0x0161: { // CD communication response read
-            uint8_t nibble;
-            if (cd.stat_nibble & 1)
-                nibble = cd.status[cd.stat_nibble >> 1] & 0x0f;
+        case 0x0161: { // REG_CDDINPUT - CD communication response read
+            uint8_t nybble;
+            if (cd.stat_nybble & 1)
+                nybble = cd.status[cd.stat_nybble >> 1] & 0x0f;
             else
-                nibble = (cd.status[cd.stat_nibble >> 1] >> 4) & 0x0f;
-            return nibble | (cd.strobe << 4);
+                nybble = (cd.status[cd.stat_nybble >> 1] >> 4) & 0x0f;
+            return nybble | (cd.strobe << 4);
         }
 
         case 0x0167: // CD status lines
@@ -948,8 +980,8 @@ static uint16_t cd_reg_read_16(uint32_t addr) {
             return (uint16_t)(nat | mech | tray) | 0xc000;
         }
 
-        case 0x0188: // CDDA left channel (bit-reversed)
-        case 0x018a: { // CDDA right channel (bit-reversed)
+        case 0x0188: // REG_CDDALEFTL - CDDA left channel (bit-reversed)
+        case 0x018a: { // REG_CDDARIGHTL - CDDA right channel (bit-reversed)
             if (!cdda_playing || cdda_sector_pos >= CDDA_SAMPS_PER_SECTOR)
                 return 0;
             int ch = (addr == 0x018a) ? 1 : 0;
@@ -977,26 +1009,26 @@ static void cd_reg_write_8(uint32_t addr, uint8_t val) {
         case 0x016d:
             return;
 
-        case 0x000f: { // IRQ Acknowledge
-            if (val & 0x20) {
+        case 0x000f: { // REG_IRQACK - CD IRQ acknowledge
+            if (val & 0x20) { // Vector 21 (decoder)
                 cd_irq_mask &= ~0x20;
                 cd_pending_irq &= ~CD_INT_DECODER;
             }
-            if (val & 0x10) {
+            if (val & 0x10) { // Vector 22 (communication)
                 cd_irq_mask &= ~0x10;
                 cd_pending_irq &= ~CD_INT_COMMUNICATION;
             }
-            if (val & 0x08) {
+            if (val & 0x08) { // Vector 23
                 geo_log(GEO_LOG_WRN, "IRQ Ack Vector 0x5c/23\n");
             }
-            if (val & 0x04) {
+            if (val & 0x04) { // Vector 24
                 geo_log(GEO_LOG_WRN, "IRQ Ack Vector 0x60/24\n");
             }
             cd_update_interrupts();
             return;
         }
 
-        case 0x0061: // DMA control
+        case 0x0061: // REG_DMASTART - DMA control
             if (val == 0x40) {
                 dma.enabled = 1;
                 cd_dma_execute();
@@ -1006,49 +1038,56 @@ static void cd_reg_write_8(uint32_t addr, uint8_t val) {
             }
             return;
 
-        case 0x0101: // LC8951 register select
+        case 0x0101: // LC8951 register address select (4 LSBs)
             lc.regptr = val & 0x0f;
             return;
 
-        case 0x0103: // LC8951 register write
+        case 0x0103: // LC8951 register data write
             geo_lc8951_reg_write(&lc, val);
             return;
 
-        case 0x0105: // Transfer area select
+        case 0x0105: // REG_TRANSAREA - active transfer area select
             reg_transarea = val & 0x07;
             return;
 
-        case 0x0111: // SPR enable/disable
+        case 0x0111: // REG_DISBLSPR - Sprite display (1 = disable, 0 = enable)
             reg_disblspr = val;
             geo_lspc_disblspr_wr(reg_disblspr);
             return;
-        case 0x0115: // FIX enable/disable
+        case 0x0115: // REG_DISBLFIX - FIX display (1 = disable, 0 = enable)
             reg_disblfix = val;
             geo_lspc_disblfix_wr(reg_disblfix);
             return;
-        case 0x0119: // Video enable/disable
+        case 0x0119: // REG_ENVIDEO - Video output (1 = enable, 0 = disable)
             reg_envideo = val;
             geo_lspc_envideo_wr(reg_envideo);
             return;
 
-        case 0x0121: busreq_spr = 1; return;
-        case 0x0123: busreq_pcm = 1; return;
-        case 0x0127: busreq_z80 = 1; geo_z80_busreq(1); return;
-        case 0x0129: busreq_fix = 1; return;
+        /* DRAM Upload Zone Bus Request Registers
+           Writing to REG_UPMAP* maps the corresponding DRAM bank into the
+           transfer area (0xE00000). Writing to REG_UPUNMAP* releases it.
+           While mapped, the 68K has bus ownership and can read/write directly.
+        */
+        case 0x0121: busreq_spr = 1; return; // REG_UPMAPSPR
+        case 0x0123: busreq_pcm = 1; return; // REG_UPMAPPCM
+        case 0x0127: // REG_UPMAPZ80
+            busreq_z80 = 1; geo_z80_busreq(1); return;
+        case 0x0129: busreq_fix = 1; return; // REG_UPMAPFIX
 
-        case 0x0131: busreq_spr = 0; return;
-        case 0x0133: busreq_pcm = 0; return;
+        case 0x0131: busreq_spr = 0; return; // REG_UPUNMAPSPR (alt)
+        case 0x0133: busreq_pcm = 0; return; // REG_UPUNMAPPCM (alt)
 
-        case 0x0141: busreq_spr = 0; return; // SPR bus release
-        case 0x0143: busreq_pcm = 0; return; // PCM bus release
-        case 0x0147: busreq_z80 = 0; geo_z80_busreq(0); return; // Z80 release
-        case 0x0149: busreq_fix = 0; return; // FIX bus release
+        case 0x0141: busreq_spr = 0; return; // REG_UPUNMAPSPR
+        case 0x0143: busreq_pcm = 0; return; // REG_UPUNMAPPCM
+        case 0x0147: // REG_UPUNMAPZ80
+            busreq_z80 = 0; geo_z80_busreq(0); return;
+        case 0x0149: busreq_fix = 0; return; // REG_UPUNMAPFIX
 
-        case 0x0163: { // CD command write
-            if (cd.cmd_nibble >= 10)
-                cd.cmd_nibble = 0;
-            uint8_t byte_idx = cd.cmd_nibble / 2;
-            if (cd.cmd_nibble & 1)
+        case 0x0163: { // REG_CDDOUTPUT - CD command write (4-bit nybble)
+            if (cd.cmd_nybble >= 10)
+                cd.cmd_nybble = 0;
+            uint8_t byte_idx = cd.cmd_nybble / 2;
+            if (cd.cmd_nybble & 1)
                 cd.cmd[byte_idx] = (cd.cmd[byte_idx] & 0xf0) | (val & 0x0f);
             else
                 cd.cmd[byte_idx] = (cd.cmd[byte_idx] & 0x0f) |
@@ -1056,19 +1095,19 @@ static void cd_reg_write_8(uint32_t addr, uint8_t val) {
             return;
         }
 
-        case 0x0165: { // CD communication pointer control
+        case 0x0165: { // REG_CDDCTRL - CD communication pointer control
             switch (val) {
                 case 0x00: break; // No-op
                 case 0x01: // Advance command pointer
-                    cd.cmd_nibble = (cd.cmd_nibble + 1) % 10;
-                    if (cd.cmd_nibble == 0) {
-                        // 10 nibbles received, command complete
+                    cd.cmd_nybble = (cd.cmd_nybble + 1) % 10;
+                    if (cd.cmd_nybble == 0) {
+                        // 10 nybbles received, command complete
                         cd_comm_process_command();
                     }
                     break;
                 case 0x02: // Advance response pointer
                     cd.strobe = 0;
-                    cd.stat_nibble = (cd.stat_nibble + 1) % 10;
+                    cd.stat_nybble = (cd.stat_nybble + 1) % 10;
                     break;
                 case 0x03: // Set strobe
                     cd.strobe = 1;
@@ -1077,21 +1116,21 @@ static void cd_reg_write_8(uint32_t addr, uint8_t val) {
             return;
         }
 
-        case 0x016f: // Watchdog timer: 0x00=enable, 0x01=disable
+        case 0x016f: // REG_UPLOAD_EN - Watchdog: 0x00 = enable, 0x01 = disable
             geo_watchdog_enable(val == 0);
             return;
 
-        case 0x0181: { // CD communication nReset (active low)
+        case 0x0181: { // REG_CDIRQ_EN - CD communication reset (active low)
             cd_irq_enabled = (val != 0);
             /* Reset packet pointers:
                commandPointer = 0, responsePointer = 9, strobe = 1
             */
-            cd.cmd_nibble = 0;
-            cd.stat_nibble = 9;
+            cd.cmd_nybble = 0;
+            cd.stat_nybble = 9;
             cd.strobe = 1;
             return;
         }
-        case 0x0183: // Z80 reset/enable
+        case 0x0183: // REG_Z80RST - Z80 reset/enable (active low)
             if (val == 0x00) {
                 z80_enabled = 0;
                 geo_z80_assert_reset();
@@ -1102,11 +1141,11 @@ static void cd_reg_write_8(uint32_t addr, uint8_t val) {
             }
             return;
 
-        case 0x01a1: // SPR bank select
+        case 0x01a1: // REG_SPRBANK - SPR DRAM bank select (2 LSBs)
             spr_bank = val & 0x03;
             return;
 
-        case 0x01a3: // PCM bank select
+        case 0x01a3: // REG_PCMBANK - PCM DRAM bank select (1 LSB)
             pcm_bank = val & 0x01;
             return;
     }
@@ -1117,18 +1156,18 @@ static void cd_reg_write_16(uint32_t addr, uint16_t val) {
     addr &= 0x01ff;
 
     switch (addr) {
-        case 0x0000: // CD-ROM drive reset
+        case 0x0000: // CD-ROM drive reset (word write to $FF0000)
             cd.playing_audio = 0;
             cd.playing_data = 0;
             cdda_playing = 0;
             cd.drive_status = CD_STATUS_IDLE;
             return;
 
-        case 0x0002: // CDROM Interrupt Mask
+        case 0x0002: // CDROM Interrupt Mask - enables Vector 22 interrupts
             irq_mask1 = val;
             return;
 
-        case 0x0004: // VBL Interrupt Mask (VITAL)
+        case 0x0004: // VBL Interrupt Mask (bits 4+5 must be set to enable)
             irq_mask2 = val;
             // Fire latched VBL if mask just became ready
             if (vbl_pending && (irq_mask2 & 0x030) == 0x030) {
@@ -1143,34 +1182,39 @@ static void cd_reg_write_16(uint32_t addr, uint16_t val) {
         case 0x000a:
             return;
 
-        // DMA registers (word-addressed)
-        case 0x0064: // DMA destination high
+        /* DMA Registers (LC8953, word-addressed)
+           The DMA engine uses a microcode architecture. REG_DMA_MODE sets the
+           16-bit microcode word, and the extension words at $FF0080-$FF008E
+           form the 9-bit opcode table. REG_DMASTART ($FF0061) bit 6 triggers
+           execution of the programmed transfer.
+        */
+        case 0x0064: // REG_DMA_ADDR1 high - DMA address 1 (high word)
             dma.dst = (dma.dst & 0xffff) | ((uint32_t)val << 16);
             return;
-        case 0x0066: // DMA destination low
+        case 0x0066: // REG_DMA_ADDR1 low - DMA address 1 (low word)
             dma.dst = (dma.dst & 0xffff0000) | (uint32_t)val;
             return;
-        case 0x0068: // DMA source high
+        case 0x0068: // REG_DMA_ADDR2 high - DMA address 2 (high word)
             dma.src = (dma.src & 0xffff) | ((uint32_t)val << 16);
             return;
-        case 0x006a: // DMA source low
+        case 0x006a: // REG_DMA_ADDR2 low - DMA address 2 (low word)
             dma.src = (dma.src & 0xffff0000) | (uint32_t)val;
             return;
-        case 0x006c: // DMA pattern/fill value
+        case 0x006c: // REG_DMA_VALUE - DMA fill value
             dma.val = val;
             return;
-        case 0x0070: // DMA length high
+        case 0x0070: // REG_DMA_COUNT high - DMA transfer length (high word)
             dma.len = (dma.len & 0xffff) | ((uint32_t)val << 16);
             return;
-        case 0x0072: // DMA length low
+        case 0x0072: // REG_DMA_COUNT low - DMA transfer length (low word)
             dma.len = (dma.len & 0xffff0000) | (uint32_t)val;
             return;
-        case 0x007e: // DMA config 0
+        case 0x007e: // REG_DMA_MODE - DMA microcode configuration word
             dma.config = val;
             return;
         case 0x0080: case 0x0082: case 0x0084: case 0x0086:
         case 0x0088: case 0x008a: case 0x008c: case 0x008e:
-            return; // DMA config extension words
+            return; // DMA microcode extension words (16x 9-bit opcodes)
     }
 
     // Fall through to byte handler for byte-oriented registers
@@ -1178,9 +1222,18 @@ static void cd_reg_write_16(uint32_t addr, uint16_t val) {
     cd_reg_write_8(addr + 1, val & 0xff);
 }
 
-// =========================================================================
-// Transfer area read/write (0xE00000 - 0xEFFFFF)
-// =========================================================================
+/* Transfer Area (0xE00000 - 0xEFFFFF)
+   The transfer area provides 68K access to the DRAM banks while the
+   corresponding bus request is held. REG_TRANSAREA selects which DRAM
+   bank is mapped into this window:
+     0 = SPR DRAM (1M bank, selected by REG_SPRBANK)
+     1 = PCM DRAM (512K bank, selected by REG_PCMBANK)
+     4 = Z80 DRAM (64K)
+     5 = FIX DRAM (128K)
+   For PCM, Z80, and FIX, the DRAM is 8-bit and mapped to odd bytes
+   only. The address is shifted right by 1 to form the DRAM address.
+   SPR DRAM is 16-bit and uses direct word-addressed access.
+*/
 static uint8_t transfer_read_8(uint32_t addr) {
     addr &= 0xfffff;
 
@@ -1309,9 +1362,40 @@ static void transfer_write_16(uint32_t addr, uint16_t val) {
     }
 }
 
-// =========================================================================
-// CD Mode M68K Memory Map
-// =========================================================================
+/* Neo Geo CD 68K Memory Map
+ * =====================================================================
+ * |    Address Range    | Size |             Description              |
+ * =====================================================================
+ * | 0x000000 - 0x00007f | 128B | Vector Table (BIOS or Program RAM)   |
+ * ---------------------------------------------------------------------
+ * | 0x000080 - 0x1fffff |   2M | Program RAM (DRAM)                   |
+ * ---------------------------------------------------------------------
+ * | 0x200000 - 0x2fffff |   1M | Unused (open bus)                    |
+ * ---------------------------------------------------------------------
+ * | 0x300000 - 0x3fffff |      | Memory Mapped Registers              |
+ * ---------------------------------------------------------------------
+ * | 0x400000 - 0x401fff |   8K | Banked Palette RAM                   |
+ * |---------------------|------|--------------------------------------
+ * | 0x402000 - 0x7fffff |      | Palette RAM Mirror                   |
+ * ---------------------------------------------------------------------
+ * | 0x800000 - 0xbfffff |   8K | Backup RAM (8K, odd bytes, mirrored) |
+ * ---------------------------------------------------------------------
+ * | 0xc00000 - 0xc7ffff | 512K | BIOS ROM                             |
+ * |---------------------|------|--------------------------------------
+ * | 0xc80000 - 0xcfffff |      | BIOS ROM Mirror                      |
+ * ---------------------------------------------------------------------
+ * | 0xd00000 - 0xd0ffff |  64K | NVRAM (battery-backed SRAM)          |
+ * |---------------------|------|--------------------------------------
+ * | 0xd10000 - 0xdfffff |      | NVRAM Mirror                         |
+ * ---------------------------------------------------------------------
+ * | 0xe00000 - 0xefffff |   1M | Transfer Area (mapped DRAM upload)   |
+ * ---------------------------------------------------------------------
+ * | 0xff0000 - 0xff01ff |      | CD Registers (active at 0xff0000)    |
+ * |---------------------|------|--------------------------------------
+ * | 0xff0200 - 0xffffff |      | CD Register Mirror                   |
+ * ---------------------------------------------------------------------
+ */
+
 unsigned geo_cd_m68k_read_8(unsigned address) {
     address &= 0xffffff;
 
@@ -1326,18 +1410,24 @@ unsigned geo_cd_m68k_read_8(unsigned address) {
     else if (address < 0x300000) { // Unused
         return 0xff;
     }
-    else if (address < 0x400000) { // Registers (same as cartridge)
+    else if (address < 0x400000) { // I/O and System Registers
         switch (address) {
-            case 0x300000: return geo_input_cb[0](0);
-            case 0x300001: return geo_input_sys_cb[3]();
-            case 0x300081: return geo_input_sys_cb[2]() & ~0x40;
-            case 0x320000: return ngsys.sound_reply;
-            case 0x320001: return geo_input_sys_cb[0]();
-            case 0x340000: return geo_input_cb[1](1);
-            case 0x380000: return geo_input_sys_cb[1]();
-            case 0x3c0000: case 0x3c0002: case 0x3c0008: case 0x3c000a:
-            case 0x3c0004: case 0x3c000c:
-            case 0x3c0006: case 0x3c000e:
+            case 0x300000: // REG_P1CNT
+                return geo_input_cb[0](0);
+            case 0x300001: // REG_DIPSW
+                return geo_input_sys_cb[3]();
+            case 0x300081: // REG_SYSTYPE
+                return geo_input_sys_cb[2]() & ~0x40;
+            case 0x320000: // REG_SOUND (read)
+                return ngsys.sound_reply;
+            case 0x320001: // REG_STATUS_A
+                return geo_input_sys_cb[0]();
+            case 0x340000: // REG_P2CNT
+                return geo_input_cb[1](1);
+            case 0x380000: // REG_STATUS_B
+                return geo_input_sys_cb[1]();
+            case 0x3c0000: case 0x3c0002: case 0x3c0008: case 0x3c000a: // LSPC
+            case 0x3c0004: case 0x3c000c: case 0x3c0006: case 0x3c000e:
                 break;
         }
     }
@@ -1381,23 +1471,26 @@ unsigned geo_cd_m68k_read_16(unsigned address) {
     }
     else if (address < 0x400000) {
         switch (address) {
-            case 0x300000: {
+            case 0x300000: { // REG_P1CNT
                 uint8_t val = geo_input_cb[0](0);
                 return (val << 8) | val;
             }
-            case 0x340000: {
+            case 0x340000: { // REG_P2CNT
                 uint8_t val = geo_input_cb[1](1);
                 return (val << 8) | val;
             }
-            case 0x380000: {
+            case 0x380000: { // REG_STATUS_B
                 uint8_t val = geo_input_sys_cb[1]();
                 return (val << 8) | val;
             }
-            case 0x3c0000: case 0x3c0002: case 0x3c0008: case 0x3c000a:
+            case 0x3c0000:
+            case 0x3c0002:
+            case 0x3c0008:
+            case 0x3c000a: // REG_VRAMADDR/REG_VRAMRW
                 return geo_lspc_vram_rd();
-            case 0x3c0004: case 0x3c000c:
+            case 0x3c0004: case 0x3c000c: // REG_VRAMMOD
                 return geo_lspc_vrammod_rd();
-            case 0x3c0006: case 0x3c000e:
+            case 0x3c0006: case 0x3c000e: // REG_LSPCMODE
                 return geo_lspc_mode_rd();
         }
     }
@@ -1432,38 +1525,59 @@ void geo_cd_m68k_write_8(unsigned address, unsigned value) {
     else if (address < 0x300000) { // Unused
         return;
     }
-    else if (address < 0x400000) { // Registers
+    else if (address < 0x400000) { // I/O and System Registers
         switch (address) {
-            case 0x300001:
+            case 0x300001: // REG_DIPSW (write = watchdog kick)
                 geo_watchdog_reset();
                 return;
-            case 0x320000:
+            case 0x320000: // REG_SOUND (write = send command to Z80)
                 ngsys.sound_code = value & 0xff;
                 if (z80_enabled)
                     geo_z80_nmi();
                 return;
-            case 0x380051:
-                return; // RTC control (no RTC on CD)
+            case 0x380051: // REG_RTCCTRL (no RTC on CD systems)
+                return;
 
-            case 0x3a0001: geo_lspc_shadow_wr(0); return;
-            case 0x3a0003:
-                vectable = 0; return; // REG_SWPBIOS
-            case 0x3a0005: return; // REG_CRDUNLOCK1
-            case 0x3a0007: return; // REG_CRDLOCK2
-            case 0x3a0009: return; // REG_CRDREGSEL
-            case 0x3a000b: return; // REG_BRDFIX
-            case 0x3a000d: reg_sramlock = 1; return;
-            case 0x3a000f: geo_lspc_palram_bank(1); return;
-            case 0x3a0011: geo_lspc_shadow_wr(1); return;
-            case 0x3a0013:
-                vectable = 1; return; // REG_SWPROM (to PRAM)
-            case 0x3a0015: return; // REG_CRDLOCK1
-            case 0x3a0017: return; // REG_CRDUNLOCK2
-            case 0x3a0019: return; // REG_CRDNORMAL
-            case 0x3a001b: return; // REG_CRTFIX
-            case 0x3a001d: reg_sramlock = 0; return;
-            case 0x3a001f: geo_lspc_palram_bank(0); return;
+            /* System Registers (0x3A0001 - 0x3A001F)
+               Data written doesn't matter. Bits are set by address, not value.
+               Registers go in pairs: bit 4 of the address is the data bit.
+            */
+            case 0x3a0001: // REG_NOSHADOW
+                geo_lspc_shadow_wr(0);
+                return;
+            case 0x3a0003: // REG_SWPBIOS
+                vectable = 0;
+                return;
+            case 0x3a0005: return; // REG_CRDUNLOCK1 (no memory card on CD)
+            case 0x3a0007: return; // REG_CRDLOCK2 (no memory card on CD)
+            case 0x3a0009: return; // REG_CRDREGSEL (no memory card on CD)
+            case 0x3a000b: return; // REG_BRDFIX (no cart S/M1 ROM on CD)
+            case 0x3a000d: // REG_SRAMLOCK
+                reg_sramlock = 1;
+                return;
+            case 0x3a000f: // REG_PALBANK1
+                geo_lspc_palram_bank(1);
+                return;
+            case 0x3a0011: // REG_SHADOW
+                geo_lspc_shadow_wr(1);
+                return;
+            case 0x3a0013: // REG_SWPROM
+                vectable = 1;
+                return;
+            case 0x3a0015: return; // REG_CRDLOCK1 (no memory card on CD)
+            case 0x3a0017: return; // REG_CRDUNLOCK2 (no memory card on CD)
+            case 0x3a0019: return; // REG_CRDNORMAL (no memory card on CD)
+            case 0x3a001b: return; // REG_CRTFIX (no cart S/M1 ROM on CD)
+            case 0x3a001d: // REG_SRAMUNLOCK
+                reg_sramlock = 0;
+                return;
+            case 0x3a001f: // REG_PALBANK0
+                geo_lspc_palram_bank(0);
+                return;
 
+            /* LSPC Video Registers (0x3C0000 - 0x3C000E)
+               Byte writes store the same data in both MSB and LSB.
+            */
             case 0x3c0000: case 0x3c0002: case 0x3c0004: case 0x3c0006:
             case 0x3c0008: case 0x3c000a: case 0x3c000c: case 0x3c000e:
                 geo_cd_m68k_write_16(address, (value << 8) | (value & 0xff));
@@ -1502,34 +1616,46 @@ void geo_cd_m68k_write_16(unsigned address, unsigned value) {
     }
     else if (address < 0x400000) {
         switch (address) {
-            case 0x300000: // Watchdog kick (word write)
+            case 0x300000: // REG_DIPSW (write = watchdog kick)
                 geo_watchdog_reset();
                 return;
-            case 0x320000:
+            case 0x320000: // REG_SOUND (write = send command to Z80)
                 ngsys.sound_code = (value >> 8) & 0xff;
                 if (z80_enabled)
                     geo_z80_nmi();
                 return;
-            case 0x3c0000: geo_lspc_vramaddr_wr(value); return;
-            case 0x3c0002: geo_lspc_vram_wr(value); return;
-            case 0x3c0004: geo_lspc_vrammod_wr((int16_t)value); return;
-            case 0x3c0006: geo_lspc_mode_wr(value); return;
-            case 0x3c0008:
+            case 0x3c0000: // REG_VRAMADDR
+                geo_lspc_vramaddr_wr(value);
+                return;
+            case 0x3c0002: // REG_VRAMRW
+                geo_lspc_vram_wr(value);
+                return;
+            case 0x3c0004: // REG_VRAMMOD
+                geo_lspc_vrammod_wr((int16_t)value);
+                return;
+            case 0x3c0006: // REG_LSPCMODE
+                geo_lspc_mode_wr(value);
+                return;
+            case 0x3c0008: // REG_TIMERHIGH
                 ngsys.irq2_reload =
                     (ngsys.irq2_reload & 0xffff) | (value << 16);
                 return;
-            case 0x3c000a:
+            case 0x3c000a: // REG_TIMERLOW
                 ngsys.irq2_reload =
                     (ngsys.irq2_reload & 0xffff0000) | (value & 0xffff);
                 if (ngsys.irq2_ctrl & IRQ_TIMER_RELOAD_WRITE)
                     ngsys.irq2_counter = ngsys.irq2_reload;
                 return;
-            case 0x3c000c:
-                if (value & 0x04) m68k_set_virq(irq_vbl_level, 0);
-                if (value & 0x02) m68k_set_virq(irq_timer_level, 0);
-                if (value & 0x01) m68k_set_virq(IRQ_RESET, 0);
+            case 0x3c000c: { // REG_IRQACK
+                if (value & 0x04)
+                    m68k_set_virq(irq_vbl_level, 0);
+                if (value & 0x02)
+                    m68k_set_virq(irq_timer_level, 0);
+                if (value & 0x01)
+                    m68k_set_virq(IRQ_RESET, 0);
                 return;
-            case 0x3c000e: return;
+            }
+            case 0x3c000e: return; // REG_TIMERSTOP
         }
     }
     else if (address < 0x800000) {
@@ -1553,11 +1679,19 @@ void geo_cd_m68k_write_16(unsigned address, unsigned value) {
     }
 }
 
-// =========================================================================
-// CD Timing
-// =========================================================================
-// CD Communication IRQ rate: ~64Hz idle, ~75Hz during playback
-// Using the sector timer (~75Hz) to also trigger communication IRQs
+/* CD Timing
+   The CD drive operates at 1x speed (75 sectors/second, ~320000 master
+   cycles per sector) for audio tracks and standard CD systems, and 2x
+   speed (150 sectors/second, ~160000 master cycles) for data tracks on
+   CDZ and Universe BIOS systems. When idle, a slower rate (~64Hz) is
+   used for communication IRQs only.
+
+   A single timer handles both sector decoding and communication IRQs.
+   Each tick of the sector timer:
+     1. If playing data, runs the LC8951 sector decoder
+     2. If the decoder interrupt conditions are met, fires Vector 21
+     3. Fires the communication interrupt (Vector 22) unconditionally
+*/
 
 void geo_cd_tick(unsigned mcycles) {
     cd_sector_counter += mcycles;
@@ -1571,7 +1705,8 @@ void geo_cd_tick(unsigned mcycles) {
             cd_sector_rate = CD_SECTOR_RATE_2X;
         else
             cd_sector_rate = CD_SECTOR_RATE_1X;
-    } else {
+    }
+    else {
         cd_sector_rate = CD_SECTOR_RATE_IDLE;
     }
 
@@ -1613,21 +1748,27 @@ void geo_cd_tick(unsigned mcycles) {
     }
 }
 
-// =========================================================================
 // VBL Masking
-// =========================================================================
 int geo_cd_vbl_enabled(void) {
     return (irq_mask2 & 0x030) == 0x030;
 }
 
-// Called by LSPC at VBL time — if mask isn't ready, latch as pending
+// Called by LSPC at VBL time - if mask isn't ready, latch as pending
 void geo_cd_set_vbl_pending(void) {
     vbl_pending = 1;
 }
 
-// =========================================================================
-// CDDA Audio Access
-// =========================================================================
+/* CDDA Audio Access
+   CDDA playback is demand-driven by the audio mixer, not clocked by the
+   master cycle counter. The mixer calls geo_cd_read_cdda() to pull exactly
+   the number of stereo samples it needs per frame. A cached 588-sample
+   sector (one Red Book audio sector = 2352 bytes = 588 stereo samples)
+   bridges the sector boundary.
+
+   The BIOS can also read instantaneous CDDA levels through the bit-reversed
+   registers REG_CDDALEFTL ($FF0188) and REG_CDDARIGHTL ($FF018A), which
+   are handled by the NEO-MGA.
+*/
 
 // Read new audio data from CD as needed, silence when not playing
 void geo_cd_read_cdda(int16_t *out, size_t numsamps) {
@@ -1660,13 +1801,6 @@ void geo_cd_read_cdda(int16_t *out, size_t numsamps) {
 void geo_cd_frame_end(void) {
     cd_frame_mcycs = 0;
 }
-
-// =========================================================================
-// Init/Reset/Deinit
-// =========================================================================
-// =========================================================================
-// BIOS Detection and Patching
-// =========================================================================
 
 // Check for a pattern at a BIOS offset (addresses relative to C00000)
 static int bios_pattern(uint8_t *bios, size_t sz, uint32_t offset,
@@ -1868,9 +2002,6 @@ void geo_cd_reset(void) {
     cd_comm_build_response();
 }
 
-// =========================================================================
-// Backup RAM Access
-// =========================================================================
 const void* geo_cd_bram_ptr(void) {
     return bram;
 }
@@ -1879,15 +2010,11 @@ const void* geo_cd_pram_ptr(void) {
     return pram;
 }
 
-// =========================================================================
-// State Serialization
-// =========================================================================
-
 static void cdcomm_state_save(uint8_t *st) {
     for (size_t i = 0; i < 5; ++i) geo_serial_push8(st, cd.cmd[i]);
     for (size_t i = 0; i < 5; ++i) geo_serial_push8(st, cd.status[i]);
-    geo_serial_push8(st, cd.cmd_nibble);
-    geo_serial_push8(st, cd.stat_nibble);
+    geo_serial_push8(st, cd.cmd_nybble);
+    geo_serial_push8(st, cd.stat_nybble);
     geo_serial_push8(st, cd.strobe);
     geo_serial_push8(st, cd.drive_status);
     geo_serial_push32(st, cd.play_lba);
@@ -1899,8 +2026,8 @@ static void cdcomm_state_save(uint8_t *st) {
 static void cdcomm_state_load(uint8_t *st) {
     for (size_t i = 0; i < 5; ++i) cd.cmd[i] = geo_serial_pop8(st);
     for (size_t i = 0; i < 5; ++i) cd.status[i] = geo_serial_pop8(st);
-    cd.cmd_nibble = geo_serial_pop8(st);
-    cd.stat_nibble = geo_serial_pop8(st);
+    cd.cmd_nybble = geo_serial_pop8(st);
+    cd.stat_nybble = geo_serial_pop8(st);
     cd.strobe = geo_serial_pop8(st);
     cd.drive_status = geo_serial_pop8(st);
     cd.play_lba = geo_serial_pop32(st);
