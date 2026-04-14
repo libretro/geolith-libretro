@@ -44,6 +44,7 @@ typedef struct _geo_chd_track_t {
     uint32_t frames;    // Number of frames in track (index 1 length)
     uint32_t pregap;    // Pregap frames
     uint8_t type;       // GEO_CHD_TRACK_DATA or GEO_CHD_TRACK_AUDIO
+    uint8_t raw;        // 0 = MODE1 (2048-byte), 1 = MODE1_RAW (2352-byte)
 } geo_chd_track_t;
 
 int geo_chd_open(const char *path);

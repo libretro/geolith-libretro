@@ -122,6 +122,7 @@ static int geo_chd_parse_toc(void) {
         }
 
         int is_audio = !strcmp(type, "AUDIO");
+        int is_raw = !strcmp(type, "MODE1_RAW");
         int is_vaudio = !strcmp(pgtype, "VAUDIO");
 
         // Align CHD position to 4-frame boundary (CHD requirement)
@@ -147,6 +148,7 @@ static int geo_chd_parse_toc(void) {
         tracks[i].frames = track_len;
         tracks[i].pregap = pregap;
         tracks[i].type = is_audio ? GEO_CHD_TRACK_AUDIO : GEO_CHD_TRACK_DATA;
+        tracks[i].raw = is_raw;
 
         chdPos += track_len;
         cdPos += track_len;
@@ -262,8 +264,11 @@ int geo_chd_read_sector(uint32_t disc_lba, uint8_t *buf) {
     if (!geo_chd_read_frame(chd_lba, frame))
         return 0;
 
-    // For Mode 1 data sectors, skip the 16-byte header to get 2048 data bytes
-    memcpy(buf, frame + 16, GEO_CHD_DATA_SIZE);
+    /* For MODE1_RAW, skip the 16-byte header to get 2048 data bytes.
+       For MODE1, the frame already starts with user data.
+    */
+    unsigned offset = tracks[0].raw ? 16 : 0;
+    memcpy(buf, frame + offset, GEO_CHD_DATA_SIZE);
     return 1;
 }
 
