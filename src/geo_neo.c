@@ -187,6 +187,11 @@ int geo_neo_load(void *data, size_t size) {
             break;
         }
         case 0x236: { // The Irritating Maze
+            if (geo_get_system() == SYSTEM_AES) {
+                geo_log(GEO_LOG_ERR, "This title is incompatible with AES"
+                    " systems\n");
+                return 0;
+            }
             flags |= GEO_DB_IRRMAZE;
             break;
         }

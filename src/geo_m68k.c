@@ -1464,9 +1464,13 @@ void geo_m68k_board_set(unsigned btype) {
     }
 }
 
+void geo_m68k_bios_bswap(void) {
+    swapb16_range(romdata->b, romdata->bsz);
+}
+
 void geo_m68k_postload(void) {
     // Byteswap the BIOS and P ROM
-    swapb16_range(romdata->b, romdata->bsz);
+    geo_m68k_bios_bswap();
     swapb16_range(romdata->p, romdata->psz);
 
     // Calculate the switchable PROM bank mask

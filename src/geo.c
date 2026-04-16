@@ -282,6 +282,20 @@ static int geo_bios_load_aux(mz_zip_archive *zip_archive) {
             return 0;
         }
     }
+    else { // Irritating Maze
+        if (romdata.b)
+            free(romdata.b);
+        romdata.b = mz_zip_reader_extract_file_to_heap(zip_archive,
+            "236-bios.sp1", &(romdata.bsz), 0);
+        if (romdata.b == NULL) {
+        mz_zip_reader_end(zip_archive);
+            geo_bios_unload();
+            geo_log(GEO_LOG_ERR,
+                "Failed to load 236-bios.sp1 from BIOS archive!\n");
+            return 0;
+        }
+        geo_m68k_bios_bswap();
+    }
 
     mz_zip_reader_end(zip_archive);
     return 1;
