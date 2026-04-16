@@ -592,6 +592,20 @@ static void cd_comm_process_command(void) {
             if (track >= 1 && track <= geo_disc_num_tracks()) {
                 cd.play_lba = geo_disc_track_start(track);
             }
+
+            if (geo_disc_track_is_audio(track)) {
+                cd.playing_audio = 1;
+                cd.playing_data = 0;
+                cdda_playing = 1;
+                cdda_audio_lba = cd.play_lba;
+                cdda_sector_pos = CDDA_SAMPS_PER_SECTOR;
+            }
+            else {
+                cd.playing_audio = 0;
+                cd.playing_data = 1;
+                cdda_playing = 0;
+            }
+
             cd.drive_status = CD_STATUS_PLAY;
             cd.status[0] = cd.drive_status | 0x02;
             cd.status[1] = to_bcd(track);
@@ -1888,7 +1902,7 @@ void geo_cd_clear_sector_decoded(void) {
 
 void geo_cd_postload(void) {
     // First, byteswap the BIOS
-    geo_m68k_postload();
+    geo_m68k_bios_bswap();
 
     // Detect BIOS family and apply patches
     if (romdata->b && romdata->bsz >= SIZE_512K) {
