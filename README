@@ -11,6 +11,7 @@ BIOS files from a recent MAME set are required:
  - neogeo.zip for Neo Geo MVS (Arcade) and Universe BIOS
  - neocd.zip and neocdz.zip for Neo Geo CD (both files required)
  - neocdz.zip for Neo Geo CDZ and CD Universe BIOS
+ - irrmaze.zip for The Irritating Maze in MVS mode
 
 This is the libretro port of the Geolith emulator, whose upstream repository
 lives at: https://gitlab.com/jgemu/geolith
@@ -29,11 +30,15 @@ geolith-libretro supports the following input devices:
 Neo Geo Joystick
 Multiplayer Extension Board (NEO-FTC1B, 4 Player)
 V-Liner
+Trackball (The Irritating Maze)
 
 Compatibility
 -------------
 Geolith is compatible with 100% of the commercially released Neo Geo AES and
 MVS libraries. Most games work in both modes, but some require MVS mode.
+
+Geolith is also compatible with 100% of the commercially released Neo Geo CD
+library.
 
 All bootlegs and hacks from the MAME set are compatible, the majority of which
 require being run in MVS mode. Other bootlegs and hacks not in the MAME set may
@@ -49,9 +54,9 @@ or new information:
 Dedicated JAMMA PCB systems are not currently supported. PAL mode is not
 currently supported.
 
-The special inputs for Irritating Maze are not yet supported. It is possible to
-play Irritating Maze using the Universe BIOS with a cheat enabled for joystick
-controls.
+The trackball input for The Irritating Maze is supported in MVS mode. It is
+possible to play Irritating Maze using the Universe BIOS with a cheat enabled
+for joystick controls.
 
 Accuracy/Caveats
 ----------------
