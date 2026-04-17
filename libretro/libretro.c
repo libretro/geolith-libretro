@@ -101,6 +101,13 @@ static int video_height_visible = LSPC_HEIGHT_VISIBLE;
 static float video_aspect = 0.0;
 static unsigned coins34 = 0x00;
 
+// Trackball accumulators (Irritating Maze)
+static int32_t trackball_x = 0;
+static int32_t trackball_y = 0;
+
+// Database flags for automatically setting inputs
+static uint32_t dbflags = 0;
+
 // libretro callbacks
 static retro_log_printf_t log_cb = NULL;
 static retro_video_refresh_t video_cb = NULL;
@@ -190,6 +197,21 @@ static struct retro_input_descriptor input_desc_vliner[] = { // V-Liner
 {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "Operator Menu"},
 {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START,  "Clear Credit"},
 {0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R3,     "Hopper Out"},
+{0}
+};
+
+static struct retro_input_descriptor input_desc_irrmaze[] = { // Irritating Maze
+{0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,
+    RETRO_DEVICE_ID_ANALOG_X, "Trackball X"},
+{0, RETRO_DEVICE_ANALOG, RETRO_DEVICE_INDEX_ANALOG_LEFT,
+    RETRO_DEVICE_ID_ANALOG_Y, "Trackball Y"},
+{0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B,      "Left A"},
+{0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A,      "Left B"},
+{0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y,      "Right A"},
+{0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X,      "Right B"},
+{0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START,  "Start"},
+{0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_SELECT, "Coin"},
+{0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_R3,     "Service"},
 {0}
 };
 
@@ -506,6 +528,55 @@ static unsigned geo_input_poll_js_ftc1b(unsigned port) {
         b |= 0x0c;
 
     return b;
+}
+
+// The Irritating Maze - trackball via analog stick, buttons via P2 port
+static unsigned geo_input_poll_irrmaze(unsigned port) {
+    input_poll_cb();
+    unsigned b = 0xff;
+
+    if (port == 0) {
+        uint8_t output = geo_m68k_reg_poutput();
+        if (output & 0x01) { // Y
+            trackball_y -= input_state_cb(0, RETRO_DEVICE_ANALOG,
+                RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_Y);
+            b = (uint8_t)(trackball_y / 8192);
+        }
+        else { // X
+            input_state_cb(0, RETRO_DEVICE_ANALOG,
+                RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X);
+            trackball_x -= input_state_cb(0, RETRO_DEVICE_ANALOG,
+                RETRO_DEVICE_INDEX_ANALOG_LEFT, RETRO_DEVICE_ID_ANALOG_X);;
+            b = (uint8_t)(trackball_x / 8192);
+        }
+    }
+    else {
+        if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_B))
+            b &= ~0x10; // P1 Button A
+        if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_A))
+            b &= ~0x20; // P1 Button B
+        if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_Y))
+            b &= ~0x40; // P2 Button A
+        if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_X))
+            b &= ~0x80; // P2 Button B
+    }
+
+    return b;
+}
+
+static unsigned geo_input_poll_stat_b_irrmaze(void) {
+    input_poll_cb();
+    unsigned s = 0x0f;
+    if (memcard) {
+        if (memcard_wp) s |= 0x40;
+    }
+    else {
+        s |= 0x30;
+    }
+
+    if (input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_START))
+        s &= ~0x01;
+    return s;
 }
 
 static void geo_cb_audio(size_t samps) {
@@ -1257,6 +1328,27 @@ bool retro_load_game(const struct retro_game_info *info) {
     // Extract the game name from the path
     geo_retro_gamename(info->path);
 
+    // Capture database flags for special game handling
+    if (!cd_mode)
+        dbflags = geo_neo_flags();
+
+    // Special handling for Irritating Maze
+    if (!cd_mode && (dbflags & GEO_DB_IRRMAZE) && systype == SYSTEM_MVS) {
+        char irrbiospath[256];
+        snprintf(irrbiospath, sizeof(irrbiospath), "%s%cirrmaze.zip",
+            sysdir, pss);
+        int64_t biossz = 0;
+        void *biosdata = geo_retro_file_read(irrbiospath, &biossz);
+        if (biosdata && geo_bios_load_mem_aux(biosdata, biossz)) {
+            log_cb(RETRO_LOG_INFO, "Loaded Irritating Maze BIOS\n");
+        }
+        else {
+            log_cb(RETRO_LOG_WARN,
+                "Failed to load irrmaze.zip — trackball will not work\n");
+        }
+        free(biosdata);
+    }
+
     // Grab the libretro frontend's save directory
     if (!environ_cb(RETRO_ENVIRONMENT_GET_SAVE_DIRECTORY, &savedir) || !savedir)
         return false;
@@ -1290,13 +1382,21 @@ bool retro_load_game(const struct retro_game_info *info) {
         geo_input_sys_set_callback(1, &geo_input_poll_stat_b_ftc1b);
     }
 
-    if (!cd_mode && geo_neo_flags() & GEO_DB_VLINER) {
+    if (!cd_mode && (dbflags & GEO_DB_VLINER)) {
         geo_input_set_callback(0, &geo_input_poll_vliner);
         geo_input_set_callback(1, &geo_input_poll_none);
         geo_input_sys_set_callback(0, &geo_input_poll_stat_a_vliner);
         geo_input_sys_set_callback(1, &geo_input_poll_stat_b_vliner);
         geo_input_sys_set_callback(4, &geo_input_poll_sys_vliner);
         environ_cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, input_desc_vliner);
+    }
+    else if (!cd_mode && (dbflags & GEO_DB_IRRMAZE) &&
+        systype == SYSTEM_MVS) {
+        geo_input_set_callback(0, &geo_input_poll_irrmaze);
+        geo_input_set_callback(1, &geo_input_poll_irrmaze);
+        geo_input_sys_set_callback(1, &geo_input_poll_stat_b_irrmaze);
+        environ_cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS,
+            input_desc_irrmaze);
     }
     else {
         environ_cb(RETRO_ENVIRONMENT_SET_INPUT_DESCRIPTORS, input_desc_js);
@@ -1382,6 +1482,8 @@ bool retro_serialize(void *data, size_t size) {
 
 bool retro_unserialize(const void *data, size_t size) {
     (void)size;
+    trackball_x = 0;
+    trackball_y = 0;
     return geo_state_load_raw(data);
 }
 
