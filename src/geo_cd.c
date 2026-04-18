@@ -548,8 +548,6 @@ static void cd_comm_process_command(void) {
             break;
 
         case 0x60: // Pause
-            cd.playing_audio = 0;
-            cd.playing_data = 0;
             cdda_playing = 0;
             cd.drive_status = CD_STATUS_PAUSE;
             cd.status[0] = cd.drive_status;
@@ -1712,7 +1710,9 @@ void geo_cd_tick(unsigned mcycles) {
     cd_frame_mcycs += mcycles;
 
     // Set timer rate based on play state
-    int is_playing = cd.playing_data || cd.playing_audio;
+    int is_playing = (cd.drive_status == CD_STATUS_PLAY) &&
+        (cd.playing_data || cd.playing_audio);
+
     if (is_playing) {
         unsigned speed2x = ngsys.sys == SYSTEM_CDZ || ngsys.sys == SYSTEM_CDU;
         if (cd.playing_data && speed2x)
@@ -1729,7 +1729,8 @@ void geo_cd_tick(unsigned mcycles) {
     while (cd_sector_counter >= cd_sector_rate) {
         cd_sector_counter -= cd_sector_rate;
 
-        if (cd.playing_data || cd.playing_audio) {
+        if (cd.drive_status == CD_STATUS_PLAY &&
+            (cd.playing_data || cd.playing_audio)) {
             // Determine audio vs data from current LBA's track type
             unsigned cur_track = find_track_for_lba(cd.play_lba);
             int is_audio = geo_disc_track_is_audio(cur_track);
