@@ -42,6 +42,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "geo_m68k.h"
 #include "geo_mixer.h"
 #include "geo_neo.h"
+#include "geo_vfs.h"
 #include "geo_z80.h"
 
 #include "libretro.h"
@@ -50,6 +51,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "gamedb.h"
 
 // libretro-common
+#include "compat/strl.h"
+#include "file/file_path.h"
 #include "streams/file_stream.h"
 
 #define SAMPLERATE_RESAMP 44100
@@ -626,138 +629,70 @@ static void geo_geom_refresh(void) {
     environ_cb(RETRO_ENVIRONMENT_SET_GEOMETRY, &avinfo);
 }
 
-// Load NVRAM, Cartridge RAM, or Memory Card data
-static int geo_savedata_load_vfs(unsigned datatype, const char *filename) {
-    if (ngsys.cdmode)
-        return 2;
-
-    const uint8_t *dataptr = NULL;
-    size_t datasize = 0;
-
-    switch (datatype) {
-        case GEO_SAVEDATA_NVRAM: {
-            if (geo_get_system() == SYSTEM_AES)
-                return 2;
-            dataptr = geo_mem_ptr(GEO_MEMTYPE_NVRAM, &datasize);
-            break;
-        }
-        case GEO_SAVEDATA_CARTRAM: {
-            dataptr = geo_mem_ptr(GEO_MEMTYPE_CARTRAM, &datasize);
-            break;
-        }
-        case GEO_SAVEDATA_MEMCARD: {
-            dataptr = geo_mem_ptr(GEO_MEMTYPE_MEMCARD, &datasize);
-            break;
-        }
-        default: return 2;
-    }
-
-    RFILE *file;
-    int64_t filesize, result;
-
-    // Open the file for reading
-    file = filestream_open(filename,
-        RETRO_VFS_FILE_ACCESS_READ, RETRO_VFS_FILE_ACCESS_HINT_NONE);
-
-    if (!file)
-        return 0;
-
-    // Find out the file's size
-    filestream_seek(file, 0, RETRO_VFS_SEEK_POSITION_END);
-    filesize = filestream_tell(file);
-    filestream_seek(file, 0, RETRO_VFS_SEEK_POSITION_START);
-
-    if (filesize != datasize) {
-        filestream_close(file);
-        return 0;
-    }
-
-    // Read the file into memory and then close it
-    result = filestream_read(file, (void*)dataptr, filesize);
-
-    if (result != filesize) {
-        filestream_close(file);
-        return 0;
-    }
-
-    filestream_close(file);
-
-    return 1; // Success!
+/* File I/O operations handed to the core, backed by libretro VFS. The core
+   calls these for disc images, files referenced by cue sheets, BIOS archives
+   and save data, so nothing in src/ needs to know libretro exists.
+*/
+static void* geo_vfs_cb_open(const char *path, unsigned mode) {
+    return (void*)filestream_open(path,
+        mode == GEO_VFS_WRITE ? RETRO_VFS_FILE_ACCESS_WRITE :
+                                RETRO_VFS_FILE_ACCESS_READ,
+        RETRO_VFS_FILE_ACCESS_HINT_NONE);
 }
 
-// Save NVRAM, Cartridge RAM, or Memory Card data
-static int geo_savedata_save_vfs(unsigned datatype, const char *filename) {
-    if (ngsys.cdmode)
-        return 2;
+static int geo_vfs_cb_close(void *file) {
+    return filestream_close((RFILE*)file);
+}
 
-    const uint8_t *dataptr = NULL;
-    size_t datasize = 0;
+static int64_t geo_vfs_cb_read(void *file, void *data, int64_t len) {
+    return filestream_read((RFILE*)file, data, len);
+}
 
-    switch (datatype) {
-        case GEO_SAVEDATA_NVRAM: {
-            if (geo_get_system() == SYSTEM_AES)
-                return 2;
-            dataptr = geo_mem_ptr(GEO_MEMTYPE_NVRAM, &datasize);
-            break;
-        }
-        case GEO_SAVEDATA_CARTRAM: {
-            if (!ngsys.sram_present)
-                return 2;
-            dataptr = geo_mem_ptr(GEO_MEMTYPE_CARTRAM, &datasize);
-            break;
-        }
-        case GEO_SAVEDATA_MEMCARD: {
-            dataptr = geo_mem_ptr(GEO_MEMTYPE_MEMCARD, &datasize);
-            break;
-        }
-        default: return 2;
-    }
+static int64_t geo_vfs_cb_write(void *file, const void *data, int64_t len) {
+    return filestream_write((RFILE*)file, data, len);
+}
 
-    RFILE *file;
-    file = filestream_open(filename,
-        RETRO_VFS_FILE_ACCESS_WRITE, RETRO_VFS_FILE_ACCESS_HINT_NONE);
+static int64_t geo_vfs_cb_seek(void *file, int64_t offset, int origin) {
+    // GEO_VFS_SEEK_* values match RETRO_VFS_SEEK_POSITION_*
+    return filestream_seek((RFILE*)file, offset, origin);
+}
 
-    if (!file)
+static int64_t geo_vfs_cb_tell(void *file) {
+    return filestream_tell((RFILE*)file);
+}
+
+static int64_t geo_vfs_cb_size(void *file) {
+    return filestream_get_size((RFILE*)file);
+}
+
+static int geo_vfs_cb_resolve(char *out, size_t outsz, const char *base,
+    const char *rel) {
+
+    if (!out || !outsz || !rel)
         return 0;
 
-    // Write and close the file
-    filestream_write(file, dataptr, datasize);
-    filestream_close(file);
-
-    return 1; // Success!
-}
-
-// Read a file into a newly allocated buffer via libretro VFS
-static void* geo_retro_file_read(const char *path, int64_t *size) {
-    RFILE *file = filestream_open(path,
-        RETRO_VFS_FILE_ACCESS_READ, RETRO_VFS_FILE_ACCESS_HINT_NONE);
-
-    if (!file)
-        return NULL;
-
-    filestream_seek(file, 0, RETRO_VFS_SEEK_POSITION_END);
-    int64_t sz = filestream_tell(file);
-    filestream_seek(file, 0, RETRO_VFS_SEEK_POSITION_START);
-
-    void *buf = malloc(sz);
-    if (!buf) {
-        filestream_close(file);
-        return NULL;
+    if (!base || path_is_absolute(rel)) {
+        if (strlen(rel) >= outsz)
+            return 0;
+        strlcpy(out, rel, outsz);
+        return 1;
     }
 
-    if (filestream_read(file, buf, sz) != sz) {
-        free(buf);
-        filestream_close(file);
-        return NULL;
-    }
+    fill_pathname_resolve_relative(out, base, rel, outsz);
 
-    filestream_close(file);
-
-    if (size)
-        *size = sz;
-
-    return buf;
+    return out[0] ? 1 : 0;
 }
+
+static const geo_vfs_t geo_vfs_retro = {
+    geo_vfs_cb_open,
+    geo_vfs_cb_close,
+    geo_vfs_cb_read,
+    geo_vfs_cb_write,
+    geo_vfs_cb_seek,
+    geo_vfs_cb_tell,
+    geo_vfs_cb_size,
+    geo_vfs_cb_resolve
+};
 
 static void check_variables(bool first_run) {
     struct retro_variable var = {0};
@@ -1045,6 +980,12 @@ void retro_init(void) {
     if (environ_cb(RETRO_ENVIRONMENT_GET_VFS_INTERFACE, &vfs_iface_info))
         filestream_vfs_init(&vfs_iface_info);
 
+    /* Hand the core our file I/O operations. filestream_* falls back to an
+       internal stdio implementation when the frontend offers no VFS
+       interface, so this is unconditional.
+    */
+    geo_vfs_set_callbacks(&geo_vfs_retro);
+
     // Set initial core options
     check_variables(true);
 
@@ -1255,10 +1196,11 @@ bool retro_load_game(const struct retro_game_info *info) {
         const char *extptr = strrchr(info->path, '.');
 
         // Convert extension to lower case
-        char ext[5];
-        snprintf(ext, sizeof(ext), "%s", extptr);
-        for (size_t i = 0; i < strlen(extptr); ++i)
-            ext[i] = tolower(ext[i]);
+        char ext[5] = { 0 };
+        if (extptr)
+            snprintf(ext, sizeof(ext), "%s", extptr);
+        for (size_t i = 0; ext[i]; ++i) // Bound by the copy, not the source
+            ext[i] = tolower((unsigned char)ext[i]);
 
         if (!strcmp(ext, ".chd") || !strcmp(ext, ".cue")) {
             cd_mode = 1;
@@ -1291,28 +1233,18 @@ bool retro_load_game(const struct retro_game_info *info) {
             systype ? "neogeo.zip" : "aes.zip");
     }
 
-    {
-        int64_t biossz = 0;
-        void *biosdata = geo_retro_file_read(biospath, &biossz);
-        if (!biosdata || !geo_bios_load_mem(biosdata, biossz)) {
-            free(biosdata);
-            log_cb(RETRO_LOG_ERROR, "Failed to load bios at: %s\n", biospath);
-            return false;
-        }
-        free(biosdata);
+    if (!geo_bios_load_file(biospath)) {
+        log_cb(RETRO_LOG_ERROR, "Failed to load bios at: %s\n", biospath);
+        return false;
     }
 
     // Neo Geo CD needs to load "000-lo.lo" from neocdz.zip
     if (systype == SYSTEM_CDF || systype == SYSTEM_CDT) {
         snprintf(biospath, sizeof(biospath), "%s%cneocdz.zip", sysdir, pss);
-        int64_t biossz = 0;
-        void *biosdata = geo_retro_file_read(biospath, &biossz);
-        if (!biosdata || !geo_bios_load_mem_aux(biosdata, biossz)) {
-            free(biosdata);
+        if (!geo_bios_load_file_aux(biospath)) {
             log_cb(RETRO_LOG_ERROR, "Failed to load bios at: %s\n", biospath);
             return false;
         }
-        free(biosdata);
     }
 
     if (cd_mode) {
@@ -1327,8 +1259,8 @@ bool retro_load_game(const struct retro_game_info *info) {
     else {
         // Cartridge mode: load NEO file
         if (info->path) { // need_fullpath is true, so load from path
-            int64_t sz = 0;
-            romdata = geo_retro_file_read(info->path, &sz);
+            size_t sz = 0;
+            romdata = geo_vfs_read_file(info->path, &sz);
             if (!romdata) {
                 log_cb(RETRO_LOG_ERROR, "Failed to read ROM: %s\n", info->path);
                 retro_unload_game();
@@ -1369,16 +1301,13 @@ bool retro_load_game(const struct retro_game_info *info) {
         char irrbiospath[256];
         snprintf(irrbiospath, sizeof(irrbiospath), "%s%cirrmaze.zip",
             sysdir, pss);
-        int64_t biossz = 0;
-        void *biosdata = geo_retro_file_read(irrbiospath, &biossz);
-        if (biosdata && geo_bios_load_mem_aux(biosdata, biossz)) {
+        if (geo_bios_load_file_aux(irrbiospath)) {
             log_cb(RETRO_LOG_INFO, "Loaded Irritating Maze BIOS\n");
         }
         else {
             log_cb(RETRO_LOG_WARN,
                 "Failed to load irrmaze.zip — trackball will not work\n");
         }
-        free(biosdata);
     }
 
     // Grab the libretro frontend's save directory
@@ -1393,7 +1322,7 @@ bool retro_load_game(const struct retro_game_info *info) {
         snprintf(savename, sizeof(savename), "%s%c%s.%s",
             savedir, pss, gamename, fext[i]);
 
-        int savestat = geo_savedata_load_vfs(i, (const char*)savename);
+        int savestat = geo_savedata_load(i, (const char*)savename);
 
         if (savestat == 1)
             log_cb(RETRO_LOG_DEBUG, "Loaded: %s\n", savename);
@@ -1484,7 +1413,7 @@ void retro_unload_game(void) {
         snprintf(savename, sizeof(savename), "%s%c%s.%s",
             savedir, pss, gamename, fext[i]);
 
-        int savestat = geo_savedata_save_vfs(i, (const char*)savename);
+        int savestat = geo_savedata_save(i, (const char*)savename);
 
         if (savestat == 1)
             log_cb(RETRO_LOG_DEBUG, "Saved: %s\n", savename);

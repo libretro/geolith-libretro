@@ -62,6 +62,7 @@ SOURCES_C := \
 	$(CORE_DIR)/src/geo_neo.c \
 	$(CORE_DIR)/src/geo_rtc.c \
 	$(CORE_DIR)/src/geo_serial.c \
+	$(CORE_DIR)/src/geo_vfs.c \
 	$(CORE_DIR)/src/geo_ymfm.c \
 	$(CORE_DIR)/src/geo_z80.c \
 	$(CORE_DIR)/src/m68k/m68kcpu.c \

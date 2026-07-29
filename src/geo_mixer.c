@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2022-2024 Rupert Carmichael
+Copyright (c) 2022-2026 Rupert Carmichael
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -50,7 +50,7 @@ void (*geo_mixer_output)(size_t);
 
 static int16_t *abuf = NULL; // Buffer to output resampled data into
 static int16_t cddabuf[2048]; // Sufficiently sized for a frame of stereo audio
-static size_t samplerate = 44100; // Default sample rate is 48000Hz
+static size_t samplerate = 44100; // Default sample rate is 44100Hz
 static double framerate = FRAMERATE_AES; // Default to AES
 
 static SpeexResamplerState *resampler = NULL;

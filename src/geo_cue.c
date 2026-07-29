@@ -35,11 +35,13 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <ctype.h>
 
 #define DR_FLAC_IMPLEMENTATION
+#define DR_FLAC_NO_STDIO // All file access goes through the VFS layer
 #include <dr/dr_flac.h>
 
 #include "geo.h"
 #include "geo_cue.h"
 #include "geo_disc.h"
+#include "geo_vfs.h"
 
 #define MAX_FILES 99
 #define MAX_TRACKS GEO_DISC_MAX_TRACKS
@@ -51,7 +53,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define FTYPE_FLAC 3  // FLAC audio
 
 typedef struct {
-    FILE *fp;
+    void *fp;           // VFS file handle
     char path[1024];
     int type;           // FTYPE_*
     uint32_t data_off;  // Offset to PCM data (WAV header skip)
@@ -75,9 +77,6 @@ static cue_track_t tracks[MAX_TRACKS];
 static unsigned num_tracks = 0;
 static uint32_t leadout_lba = 0;
 
-// Base directory of the CUE file (for resolving relative paths)
-static char basedir[512];
-
 // FLAC last-read state to avoid redundant seeks
 static int flac_last_track = -1;
 static uint64_t flac_last_frame = 0;
@@ -92,21 +91,6 @@ static int strjcasecmp(const char *a, const char *b, size_t n) {
             return 0;
     }
     return 0;
-}
-
-// Derive the base directory from the full path
-static void geo_cue_set_basedir(const char *cuepath) {
-    // Copy path and find last separator
-    strncpy(basedir, cuepath, sizeof(basedir) - 1);
-    basedir[sizeof(basedir) - 1] = '\0';
-
-    char *sep = strrchr(basedir, '/');
-    if (!sep)
-        sep = strrchr(basedir, '\\');
-    if (sep)
-        sep[1] = '\0';
-    else
-        basedir[0] = '\0';
 }
 
 // Detect type of file being opened
@@ -124,9 +108,9 @@ static int geo_cue_detect_file_type(const char *filename) {
 }
 
 // Parse WAV header, return offset to PCM data. 0 on failure.
-static uint32_t geo_cue_wav_parse_header(FILE *fp) {
+static uint32_t geo_cue_wav_parse_header(void *fp) {
     uint8_t hdr[44];
-    if (fread(hdr, 1, 44, fp) != 44)
+    if (geo_vfs_read(fp, hdr, 44) != 44)
         return 0;
 
     // Check RIFF header
@@ -134,44 +118,82 @@ static uint32_t geo_cue_wav_parse_header(FILE *fp) {
         return 0;
 
     // Walk chunks to find "data"
-    fseek(fp, 12, SEEK_SET);
+    if (geo_vfs_seek(fp, 12, GEO_VFS_SEEK_SET) < 0)
+        return 0;
     while (1) {
         uint8_t chunk[8];
-        if (fread(chunk, 1, 8, fp) != 8)
+        if (geo_vfs_read(fp, chunk, 8) != 8)
             return 0;
         uint32_t chunk_size = chunk[4] | (chunk[5] << 8) |
                               (chunk[6] << 16) | (chunk[7] << 24);
         if (!memcmp(chunk, "data", 4))
-            return (uint32_t)ftell(fp);
-        fseek(fp, chunk_size, SEEK_CUR);
+            return (uint32_t)geo_vfs_tell(fp);
+        if (geo_vfs_seek(fp, chunk_size, GEO_VFS_SEEK_CUR) < 0)
+            return 0;
     }
+}
+
+// dr_flac read callback, backed by the VFS layer
+static size_t geo_cue_flac_read(void *userdata, void *buf, size_t len) {
+    int64_t ret = geo_vfs_read(userdata, buf, (int64_t)len);
+    return ret < 0 ? 0 : (size_t)ret;
+}
+
+// dr_flac seek callback, backed by the VFS layer
+static drflac_bool32 geo_cue_flac_seek(void *userdata, int offset,
+    drflac_seek_origin origin) {
+
+    int whence;
+
+    switch (origin) {
+        case DRFLAC_SEEK_CUR: whence = GEO_VFS_SEEK_CUR; break;
+        case DRFLAC_SEEK_END: whence = GEO_VFS_SEEK_END; break;
+        default: whence = GEO_VFS_SEEK_SET; break;
+    }
+
+    return geo_vfs_seek(userdata, offset, whence) < 0 ?
+        DRFLAC_FALSE : DRFLAC_TRUE;
+}
+
+// dr_flac tell callback, backed by the VFS layer
+static drflac_bool32 geo_cue_flac_tell(void *userdata, drflac_int64 *cursor) {
+    int64_t pos = geo_vfs_tell(userdata);
+
+    if (pos < 0)
+        return DRFLAC_FALSE;
+
+    *cursor = (drflac_int64)pos;
+
+    return DRFLAC_TRUE;
 }
 
 // Open a file specified in a cue sheet
 static int geo_cue_open_file(int idx) {
     cue_file_t *f = &files[idx];
 
-    if (f->type == FTYPE_FLAC) {
-        f->flac = drflac_open_file(f->path, NULL);
-        if (!f->flac) {
-            geo_log(GEO_LOG_ERR, "CUE: Failed to open FLAC: %s\n", f->path);
-            return 0;
-        }
-        f->fp = NULL;
-        return 1;
-    }
-
-    f->fp = fopen(f->path, "rb");
+    f->fp = geo_vfs_open(f->path, GEO_VFS_READ);
     if (!f->fp) {
         geo_log(GEO_LOG_ERR, "CUE: Failed to open file: %s\n", f->path);
         return 0;
+    }
+
+    if (f->type == FTYPE_FLAC) {
+        f->flac = drflac_open(geo_cue_flac_read, geo_cue_flac_seek,
+            geo_cue_flac_tell, f->fp, NULL);
+        if (!f->flac) {
+            geo_log(GEO_LOG_ERR, "CUE: Failed to open FLAC: %s\n", f->path);
+            geo_vfs_close(f->fp);
+            f->fp = NULL;
+            return 0;
+        }
+        return 1;
     }
 
     if (f->type == FTYPE_WAV) {
         f->data_off = geo_cue_wav_parse_header(f->fp);
         if (!f->data_off) {
             geo_log(GEO_LOG_ERR, "CUE: Invalid WAV header: %s\n", f->path);
-            fclose(f->fp);
+            geo_vfs_close(f->fp);
             f->fp = NULL;
             return 0;
         }
@@ -202,10 +224,9 @@ static uint32_t geo_cue_file_size_frames(int file_idx) {
     if (!f->fp)
         return 0;
 
-    long cur = ftell(f->fp);
-    fseek(f->fp, 0, SEEK_END);
-    long size = ftell(f->fp);
-    fseek(f->fp, cur, SEEK_SET);
+    int64_t size = geo_vfs_size(f->fp);
+    if (size < 0)
+        return 0;
 
     if (f->type == FTYPE_WAV)
         size -= f->data_off;
@@ -222,10 +243,12 @@ int geo_cue_open(const char *path) {
     memset(files, 0, sizeof(files));
     memset(tracks, 0, sizeof(tracks));
 
-    geo_cue_set_basedir(path);
-
-    FILE *cue = fopen(path, "r");
-    if (!cue) {
+    /* Cue sheets are small, so read the whole thing in and walk it line by
+       line rather than requiring the VFS layer to provide a gets operation.
+    */
+    size_t cuesz = 0;
+    char *cuedata = (char*)geo_vfs_read_file(path, &cuesz);
+    if (!cuedata) {
         geo_log(GEO_LOG_ERR, "CUE: Failed to open: %s\n", path);
         return 0;
     }
@@ -237,7 +260,17 @@ int geo_cue_open(const char *path) {
     int pending_index00 = 0;     // Whether we got INDEX 00 before INDEX 01
     uint32_t index00_offset = 0; // File offset at INDEX 00
 
-    while (fgets(line, sizeof(line), cue)) {
+    for (size_t lpos = 0; lpos < cuesz; ) {
+        // Measure the line, then copy it out of the buffer
+        size_t llen = 0;
+        while (lpos + llen < cuesz && cuedata[lpos + llen] != '\n')
+            ++llen;
+
+        size_t copylen = llen < sizeof(line) ? llen : sizeof(line) - 1;
+        memcpy(line, cuedata + lpos, copylen);
+        line[copylen] = '\0';
+        lpos += llen + 1;
+
         // Trim trailing newline/whitespace
         size_t len = strlen(line);
         while (len > 0 && (line[len - 1] == '\n' || line[len - 1] == '\r' ||
@@ -281,13 +314,19 @@ int geo_cue_open(const char *path) {
                 filename[flen] = '\0';
             }
 
-            // Build full path
+            // Build full path, relative to the directory holding the cue
             cue_file_t *f = &files[num_files];
-            snprintf(f->path, sizeof(f->path), "%s%s", basedir, filename);
+            if (!geo_vfs_resolve(f->path, sizeof(f->path), path, filename)) {
+                geo_log(GEO_LOG_ERR, "CUE: Failed to resolve path: %s\n",
+                    filename);
+                free(cuedata);
+                geo_cue_close();
+                return 0;
+            }
             f->type = geo_cue_detect_file_type(filename);
 
             if (!geo_cue_open_file(num_files)) {
-                fclose(cue);
+                free(cuedata);
                 geo_cue_close();
                 return 0;
             }
@@ -404,7 +443,7 @@ int geo_cue_open(const char *path) {
         // REM, POSTGAP, SONGWRITER, etc. — ignored
     }
 
-    fclose(cue);
+    free(cuedata);
 
     if (num_tracks == 0) {
         geo_log(GEO_LOG_ERR, "CUE: No tracks found\n");
@@ -447,13 +486,13 @@ int geo_cue_open(const char *path) {
 // Close a cue sheet
 void geo_cue_close(void) {
     for (unsigned i = 0; i < num_files; ++i) {
-        if (files[i].fp) {
-            fclose(files[i].fp);
-            files[i].fp = NULL;
-        }
-        if (files[i].flac) {
+        if (files[i].flac) { // Decoder holds the file handle, close it first
             drflac_close(files[i].flac);
             files[i].flac = NULL;
+        }
+        if (files[i].fp) {
+            geo_vfs_close(files[i].fp);
+            files[i].fp = NULL;
         }
     }
     num_files = 0;
@@ -477,23 +516,21 @@ int geo_cue_read_sector(uint32_t disc_lba, uint8_t *buf) {
     cue_track_t *t = &tracks[ti];
     cue_file_t *f = &files[t->file_idx];
 
-    if (!f->fp)
+    if (!f->fp || f->type == FTYPE_FLAC)
         return 0;
 
     uint32_t track_offset = disc_lba - t->start;
     uint64_t byte_offset = t->file_offset +
                            (uint64_t)track_offset * t->sector_size;
 
-    if (t->sector_size == GEO_DISC_SECTOR_SIZE) {
-        // Raw 2352: skip 16-byte header, read 2048 data bytes directly
-        fseek(f->fp, byte_offset + 16, SEEK_SET);
-    }
-    else {
-        // ISO 2048: read directly
-        fseek(f->fp, byte_offset, SEEK_SET);
-    }
+    // Raw 2352: skip 16-byte header. ISO 2048: read directly.
+    if (t->sector_size == GEO_DISC_SECTOR_SIZE)
+        byte_offset += 16;
 
-    if (fread(buf, 1, GEO_DISC_DATA_SIZE, f->fp) != GEO_DISC_DATA_SIZE)
+    if (geo_vfs_seek(f->fp, (int64_t)byte_offset, GEO_VFS_SEEK_SET) < 0)
+        return 0;
+
+    if (geo_vfs_read(f->fp, buf, GEO_DISC_DATA_SIZE) != GEO_DISC_DATA_SIZE)
         return 0;
 
     return 1;
@@ -533,19 +570,24 @@ int geo_cue_read_audio(uint32_t disc_lba, int16_t *buf) {
     if (!f->fp)
         return 0;
 
+    uint64_t byte_offset;
     if (f->type == FTYPE_WAV) {
-        uint64_t byte_offset = f->data_off +
-                               (uint64_t)track_offset * GEO_DISC_SECTOR_SIZE;
-        fseek(f->fp, byte_offset, SEEK_SET);
+        byte_offset = f->data_off +
+                      (uint64_t)track_offset * GEO_DISC_SECTOR_SIZE;
     } else {
         // BIN: raw 2352 bytes per sector
-        uint64_t byte_offset = t->file_offset +
-                               (uint64_t)track_offset * t->sector_size;
-        fseek(f->fp, byte_offset, SEEK_SET);
+        byte_offset = t->file_offset +
+                      (uint64_t)track_offset * t->sector_size;
+    }
+
+    if (geo_vfs_seek(f->fp, (int64_t)byte_offset, GEO_VFS_SEEK_SET) < 0) {
+        memset(buf, 0, GEO_DISC_SECTOR_SIZE);
+        return 0;
     }
 
     // BIN/WAV audio is little-endian — no byte-swap needed
-    if (fread(buf, 1, GEO_DISC_SECTOR_SIZE, f->fp) != GEO_DISC_SECTOR_SIZE) {
+    if (geo_vfs_read(f->fp, buf, GEO_DISC_SECTOR_SIZE) !=
+        GEO_DISC_SECTOR_SIZE) {
         memset(buf, 0, GEO_DISC_SECTOR_SIZE);
         return 0;
     }

@@ -60,8 +60,8 @@ static int detect_backend(const char *path) {
 
     char ext[5];
     snprintf(ext, sizeof(ext), "%s", extptr);
-    for (size_t i = 0; i < strlen(extptr); ++i)
-        ext[i] = tolower(ext[i]);
+    for (size_t i = 0; ext[i]; ++i) // Bound by the copy, not the source
+        ext[i] = tolower((unsigned char)ext[i]);
 
     if (!strcmp(ext, ".chd"))
         return 1;

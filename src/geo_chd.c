@@ -38,6 +38,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #include "geo.h"
 #include "geo_chd.h"
+#include "geo_vfs.h"
 
 static chd_file *chd = NULL;
 static const chd_header *header = NULL;
@@ -170,10 +171,76 @@ static int geo_chd_parse_toc(void) {
     return num_tracks > 0;
 }
 
+/* libchdr accesses the CHD through a core_file, so all that is required to
+   keep file access out of the core is a wrapper over the VFS layer.
+*/
+static uint64_t geo_chd_cf_fsize(core_file *cf) {
+    int64_t size = geo_vfs_size(cf->argp);
+    return size < 0 ? (uint64_t)-1 : (uint64_t)size;
+}
+
+static size_t geo_chd_cf_fread(void *ptr, size_t size, size_t nmemb,
+    core_file *cf) {
+
+    if (!size)
+        return 0;
+
+    int64_t ret = geo_vfs_read(cf->argp, ptr, (int64_t)(size * nmemb));
+
+    return ret < 0 ? 0 : (size_t)(ret / (int64_t)size);
+}
+
+static int geo_chd_cf_fclose(core_file *cf) {
+    int ret = geo_vfs_close(cf->argp);
+    free(cf);
+    return ret;
+}
+
+static int geo_chd_cf_fseek(core_file *cf, int64_t offset, int whence) {
+    int origin;
+
+    switch (whence) {
+        case SEEK_CUR: origin = GEO_VFS_SEEK_CUR; break;
+        case SEEK_END: origin = GEO_VFS_SEEK_END; break;
+        default: origin = GEO_VFS_SEEK_SET; break;
+    }
+
+    return geo_vfs_seek(cf->argp, offset, origin) < 0 ? -1 : 0;
+}
+
+static core_file* geo_chd_cf_open(const char *path) {
+    core_file *cf = (core_file*)calloc(1, sizeof(core_file));
+    if (!cf)
+        return NULL;
+
+    cf->argp = geo_vfs_open(path, GEO_VFS_READ);
+    if (!cf->argp) {
+        free(cf);
+        return NULL;
+    }
+
+    cf->fsize = geo_chd_cf_fsize;
+    cf->fread = geo_chd_cf_fread;
+    cf->fclose = geo_chd_cf_fclose;
+    cf->fseek = geo_chd_cf_fseek;
+
+    return cf;
+}
+
 int geo_chd_open(const char *path) {
-    chd_error err = chd_open(path, CHD_OPEN_READ, NULL, &chd);
+    core_file *cf = geo_chd_cf_open(path);
+    if (!cf) {
+        geo_log(GEO_LOG_ERR, "Failed to open CHD: %s\n", path);
+        return 0;
+    }
+
+    /* libchdr takes ownership of the core_file here - it is closed by
+       chd_close(), including on the failure path below.
+    */
+    chd_error err = chd_open_core_file(cf, CHD_OPEN_READ, NULL, &chd);
     if (err != CHDERR_NONE) {
         geo_log(GEO_LOG_ERR, "Failed to open CHD: %s (error %d)\n", path, err);
+        chd = NULL;
         return 0;
     }
 

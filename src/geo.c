@@ -41,6 +41,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "geo_mixer.h"
 #include "geo_rtc.h"
 #include "geo_serial.h"
+#include "geo_vfs.h"
 #include "geo_ymfm.h"
 #include "geo_z80.h"
 
@@ -322,26 +323,33 @@ int geo_bios_load_mem_aux(void *data, size_t size) {
     return geo_bios_load_aux(&zip_archive);
 }
 
-// Load a zipped collection of System ROM data from a file
+/* Load a zipped collection of System ROM data from a file. The archive is
+   read through the VFS layer and handed to the in-memory loader, so miniz
+   never touches the filesystem itself.
+*/
 int geo_bios_load_file(const char *biospath) {
-    mz_zip_archive zip_archive;
-    memset(&zip_archive, 0, sizeof(zip_archive));
-
-    // Make sure it's actually a zip file
-    if (!mz_zip_reader_init_file(&zip_archive, biospath, 0))
+    size_t sz = 0;
+    void *data = geo_vfs_read_file(biospath, &sz);
+    if (!data)
         return 0;
-    return geo_bios_load(&zip_archive);
+
+    int ret = geo_bios_load_mem(data, sz);
+    free(data);
+
+    return ret;
 }
 
 // Load a zipped collection of Auxiliary System ROM data from a file
 int geo_bios_load_file_aux(const char *biospath) {
-    mz_zip_archive zip_archive;
-    memset(&zip_archive, 0, sizeof(zip_archive));
-
-    // Make sure it's actually a zip file
-    if (!mz_zip_reader_init_file(&zip_archive, biospath, 0))
+    size_t sz = 0;
+    void *data = geo_vfs_read_file(biospath, &sz);
+    if (!data)
         return 0;
-    return geo_bios_load_aux(&zip_archive);
+
+    int ret = geo_bios_load_mem_aux(data, sz);
+    free(data);
+
+    return ret;
 }
 
 void geo_bios_unload(void) {
@@ -388,27 +396,25 @@ int geo_savedata_load(unsigned datatype, const char *filename) {
         default: return 2;
     }
 
-    FILE *file;
-    size_t filesize, result;
-
     // Open the file for reading
-    file = fopen(filename, "rb");
+    void *file = geo_vfs_open(filename, GEO_VFS_READ);
     if (!file)
         return 0;
 
     // Find out the file's size
-    fseek(file, 0, SEEK_END);
-    filesize = ftell(file);
-    fseek(file, 0, SEEK_SET);
+    int64_t filesize = geo_vfs_size(file);
 
-    if (filesize != datasize)
+    if (filesize != (int64_t)datasize) {
+        geo_vfs_close(file);
         return 0;
+    }
 
     // Read the file into the memory card and then close it
-    result = fread((void*)dataptr, sizeof(uint8_t), filesize, file);
+    int64_t result = geo_vfs_read(file, (void*)dataptr, filesize);
+    geo_vfs_close(file);
+
     if (result != filesize)
         return 0;
-    fclose(file);
 
     return 1; // Success!
 }
@@ -446,14 +452,13 @@ int geo_savedata_save(unsigned datatype, const char *filename) {
         default: return 2;
     }
 
-    FILE *file;
-    file = fopen(filename, "wb");
+    void *file = geo_vfs_open(filename, GEO_VFS_WRITE);
     if (!file)
         return 0;
 
     // Write and close the file
-    fwrite(dataptr, datasize, sizeof(uint8_t), file);
-    fclose(file);
+    geo_vfs_write(file, dataptr, (int64_t)datasize);
+    geo_vfs_close(file);
 
     return 1; // Success!
 }
@@ -582,40 +587,15 @@ int geo_state_load_raw(const void *sstate) {
 
 // Load a state from a file
 int geo_state_load(const char *filename) {
-    FILE *file;
-    size_t filesize, result;
-    void *sstatefile;
-
-    // Open the file for reading
-    file = fopen(filename, "rb");
-    if (!file)
+    // Read the file into memory
+    void *sstatefile = geo_vfs_read_file(filename, NULL);
+    if (!sstatefile)
         return 0;
-
-    // Find out the file's size
-    fseek(file, 0, SEEK_END);
-    filesize = ftell(file);
-    fseek(file, 0, SEEK_SET);
-
-    // Allocate memory to read the file into
-    sstatefile = (void*)calloc(filesize, sizeof(uint8_t));
-    if (sstatefile == NULL) {
-        fclose(file);
-        return 0;
-    }
-
-    // Read the file into memory and then close it
-    result = fread(sstatefile, sizeof(uint8_t), filesize, file);
-    if (result != filesize) {
-        fclose(file);
-        free(sstatefile);
-        return 0;
-    }
 
     // File has been read, now copy it into the emulator
     int ret = geo_state_load_raw((const void*)sstatefile);
 
-    // Free the allocated memory and close file handle
-    fclose(file);
+    // Free the allocated memory
     free(sstatefile);
 
     return ret; // Success!
@@ -661,8 +641,7 @@ const void* geo_state_save_raw(void) {
 // Save a state to a file
 int geo_state_save(const char *filename) {
     // Open the file for writing
-    FILE *file;
-    file = fopen(filename, "wb");
+    void *file = geo_vfs_open(filename, GEO_VFS_WRITE);
     if (!file)
         return 0;
 
@@ -670,8 +649,8 @@ int geo_state_save(const char *filename) {
     uint8_t *sstate = (uint8_t*)geo_state_save_raw();
 
     // Write and close the file
-    fwrite(sstate, geo_serial_size(), sizeof(uint8_t), file);
-    fclose(file);
+    geo_vfs_write(file, sstate, (int64_t)geo_serial_size());
+    geo_vfs_close(file);
 
     return 1; // Success!
 }
