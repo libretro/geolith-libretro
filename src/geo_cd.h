@@ -67,6 +67,7 @@ const void* geo_cd_pram_ptr(void);
 
 int geo_cd_detect_bios(uint8_t *bios, size_t sz);
 void geo_cd_set_speed_hack(int enabled);
+void geo_cd_set_dma_len_limit(int enabled);
 
 // Loading skip — returns 1 if a CD sector was decoded this frame
 int geo_cd_sector_decoded_this_frame(void);

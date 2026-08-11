@@ -237,6 +237,7 @@ static uint32_t cd_sector_counter = 0;
 static uint32_t cd_sector_rate = CD_SECTOR_RATE_1X;
 
 static int speed_hack = 0;
+static int dma_len_limit = 0;
 static int bios_family = CD_BIOS_UNKNOWN;
 static int sector_decoded_this_frame = 0;
 
@@ -736,6 +737,54 @@ static void dma_write_word(uint8_t *ptr, uint32_t mask, uint32_t *offset,
     *offset += 2;
 }
 
+/* CD buffer DMA length limit
+   The BIOS programs descriptors far larger than one sector when filling PCM
+   DRAM - Art of Fighting asks for 0x20000 words entering the bonus stage. The
+   LC8951 only stages one sector, so the transfer below is clamped, but the
+   BIOS then advances its own upload pointers as though the whole descriptor
+   had moved:
+
+     $7ef4(a5)  0x10FEF4  upload offset within the 1MB window
+     $7ef8(a5)  0x10FEF8  source pointer
+     $7efc(a5)  0x10FEFC  descriptor length in bytes
+     $7edb(a5)  0x10FEDB  upload bank counter, written to REG_UPBANK_PCM
+
+   With a5 = 0x108000 the BIOS does offset += 2 * length after each transfer
+   and rolls the bank when that crosses 0x100000. Left alone it strides
+   0x80000 per sector, so only the first 2048 bytes of each 256KB quarter are
+   written and the sample data is full of holes. Forcing the length variable
+   to a single sector keeps the BIOS bookkeeping consistent with what was
+   actually transferred.
+
+   The length variable is verified against the descriptor before it is
+   touched, so this is inert on any BIOS that does not share the SNK memory
+   layout. NeoCD and FinalBurn Neo carry the same workaround; MAME instead
+   refuses the transfer outright. Whether real hardware completes these
+   descriptors is unconfirmed, hence the option.
+*/
+#define BIOS_VAR_UPLOAD_LEN 0x10fefc
+#define DMA_CDBUF_MAX_WORDS 0x400
+
+static void cd_dma_limit_len(uint32_t *len) {
+    if (!dma_len_limit || *len <= DMA_CDBUF_MAX_WORDS)
+        return;
+
+    /* COUNT is programmed as length / 2, so the BIOS variable should read
+       back as len * 2. If it does not, this is not the layout we expect. */
+    uint32_t biosval = ((uint32_t)read16(pram, BIOS_VAR_UPLOAD_LEN) << 16) |
+        read16(pram, BIOS_VAR_UPLOAD_LEN + 2);
+
+    if (biosval != *len * 2) {
+        geo_log(GEO_LOG_WRN, "CD DMA length limit: BIOS variable reads %08x, "
+            "expected %08x - not applying\n", biosval, *len * 2);
+        return;
+    }
+
+    write16(pram, BIOS_VAR_UPLOAD_LEN, 0x0000);
+    write16(pram, BIOS_VAR_UPLOAD_LEN + 2, DMA_CDBUF_MAX_WORDS * 2);
+    *len = DMA_CDBUF_MAX_WORDS;
+}
+
 static void cd_dma_execute(void) {
     if (!dma.enabled || dma.len == 0)
         return;
@@ -778,6 +827,7 @@ static void cd_dma_execute(void) {
             }
             uint32_t dst = dma.dst;
             uint32_t len = dma.len;
+            cd_dma_limit_len(&len);
             uint32_t lc_words = (lc.dbc + 1) / 2;
             if (lc_words > 0 && len > lc_words)
                 len = lc_words;
@@ -804,6 +854,7 @@ static void cd_dma_execute(void) {
             }
             uint32_t dst = dma.dst;
             uint32_t len = dma.len;
+            cd_dma_limit_len(&len);
             uint32_t lc_words = (lc.dbc + 1) / 2;
             if (lc_words > 0 && len > lc_words)
                 len = lc_words;
@@ -1891,6 +1942,10 @@ static void bios_patch_speed_hack(uint8_t *bios, size_t sz, int family) {
 
 void geo_cd_set_speed_hack(int enabled) {
     speed_hack = enabled;
+}
+
+void geo_cd_set_dma_len_limit(int enabled) {
+    dma_len_limit = enabled;
 }
 
 int geo_cd_sector_decoded_this_frame(void) {
