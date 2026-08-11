@@ -351,6 +351,22 @@ static struct retro_core_option_v2_definition option_defs_us[] = {
       "disabled"
    },
    {
+      "geolith_cd_dma_len_limit",
+      "CD DMA Length Limit",
+      NULL,
+      "Correct the BIOS upload pointers when a CD buffer DMA is larger than "
+      "one sector, fixing corrupted sound in Art of Fighting's bonus stage. "
+      "This is a hack, and real hardware behaviour is unconfirmed.",
+      NULL,
+      "hacks",
+      {
+         { "enabled", "Enabled" },
+         { "disabled", "Disabled" },
+         { NULL, NULL },
+      },
+      "disabled"
+   },
+   {
       "geolith_cd_skip_loading",
       "Skip CD Loading",
       NULL,

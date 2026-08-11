@@ -81,6 +81,7 @@ static int verified = 0;
 static int cd_mode = 0;
 static int cd_systype = SYSTEM_CDZ;
 static int cd_speed_hack = 0;
+static int cd_dma_len_limit = 0;
 static int cd_skip_loading = 0;
 
 // Game name without path or extension
@@ -790,6 +791,16 @@ static void check_variables(bool first_run) {
             geo_cd_set_speed_hack(cd_speed_hack);
     }
 
+    // CD DMA Length Limit
+    var.key   = "geolith_cd_dma_len_limit";
+    var.value = NULL;
+
+    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+        cd_dma_len_limit = !strcmp(var.value, "enabled");
+        if (cd_mode)
+            geo_cd_set_dma_len_limit(cd_dma_len_limit);
+    }
+
     // CD Skip Loading
     var.key   = "geolith_cd_skip_loading";
     var.value = NULL;
@@ -1081,7 +1092,7 @@ static void update_option_visibility(void) {
     // CD-only options: hide in cart mode
     const char *cd_opts[] = {
         "geolith_cd_system_type", "geolith_cd_speed_hack",
-        "geolith_cd_skip_loading",
+        "geolith_cd_dma_len_limit", "geolith_cd_skip_loading",
         NULL
     };
 
@@ -1210,6 +1221,7 @@ bool retro_load_game(const struct retro_game_info *info) {
             geo_mixer_set_raw(0);
             geo_mixer_init();
             geo_cd_set_speed_hack(cd_systype == SYSTEM_CDU ? 0 : cd_speed_hack);
+            geo_cd_set_dma_len_limit(cd_dma_len_limit);
         }
     }
 
