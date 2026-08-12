@@ -1,5 +1,5 @@
 /*
-Copyright (c) 2022-2024 Rupert Carmichael
+Copyright (c) 2022-2026 Rupert Carmichael
 All rights reserved.
 
 Redistribution and use in source and binary forms, with or without
@@ -370,6 +370,42 @@ int geo_neo_load(void *data, size_t size) {
             */
             if (neodata[0x1000 + 0x30d9] != 0x03)
                 geo_m68k_board_set(BOARD_CTHD2003);
+            break;
+        }
+        case 0xfedc: { // Super Bubble Pop (prototype)
+            /* The cart's protection device serves 68K reads in the
+               0x200-0x1fff range nibble swapped (except the word at 0xd5e,
+               which it returns as-is), and MAME additionally patches the
+               program at init: the game clears its in-game text overlay
+               immediately after writing it, and joystick inputs need to be
+               enabled. TerraOnion's NeoBuilder bakes all of this into the
+               P ROM at conversion time; sets converted from the pristine
+               program are softpatched here so both variants run.
+            */
+            if (romdata->psz >= 0x40000 && neodata[0x1000 + 0x2a6f9] == 0xb9) {
+                /* P ROM bytes are already byteswapped to 68K order here:
+                   the unpatched jsr 0x4eb9 at 0x2a6f8 reads 4e b9, while
+                   NeoBuilder's baked nop reads 4e 71.
+                */
+                uint8_t *p = &neodata[0x1000];
+
+                /* Nibble swap the protection window - a per-byte
+                   transform, so unaffected by the byteswap
+                */
+                for (size_t i = 0x200; i < 0x2000; ++i) {
+                    if (i == 0xd5e || i == 0xd5f)
+                        continue;
+                    p[i] = (p[i] << 4) | (p[i] >> 4);
+                }
+
+                // NOP the text overlay clear
+                p[0x2a6f8] = 0x4e; p[0x2a6f9] = 0x71;
+                p[0x2a6fa] = 0x4e; p[0x2a6fb] = 0x71;
+                p[0x2a6fc] = 0x4e; p[0x2a6fd] = 0x71;
+
+                // moveq #1, d0 - enable joystick inputs
+                p[0x3ff2c] = 0x70; p[0x3ff2d] = 0x01;
+            }
             break;
         }
         default: {
