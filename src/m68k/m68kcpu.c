@@ -141,7 +141,7 @@ const uint8_t m68ki_exception_cycle_table[5][256] =
 		 50, /*  3: Address Error                         (unemulated) */
 		 34, /*  4: Illegal Instruction                                */
 		 38, /*  5: Divide by Zero                                     */
-		 40, /*  6: CHK                                                */
+		 38, /*  6: CHK                                                */
 		 34, /*  7: TRAPV                                              */
 		 34, /*  8: Privilege Violation                                */
 		 34, /*  9: Trace                                              */
