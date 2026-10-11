@@ -131,6 +131,6 @@ void geo_mixer_init(void) {
     else
         framerate = FRAMERATE_AES;
 
-    resampler = speex_resampler_init(2, SAMPLERATE_YM2610, samplerate, 3, &err);
+    resampler = speex_resampler_init(2, SAMPLERATE_YM2610, samplerate, 7, &err);
     geo_mixer_output = &geo_mixer_resamp;
 }
