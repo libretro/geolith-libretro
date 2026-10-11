@@ -355,12 +355,23 @@ int geo_bios_load_file_aux(const char *biospath) {
 void geo_bios_unload(void) {
     if (romdata.b)
         free(romdata.b);
+    romdata.b = NULL;
+    romdata.bsz = 0;
+
     if (romdata.l0)
         free(romdata.l0);
+    romdata.l0 = NULL;
+    romdata.l0sz = 0;
+
     if (romdata.sfix)
         free(romdata.sfix);
+    romdata.sfix = NULL;
+    romdata.sfixsz = 0;
+
     if (romdata.sm)
         free(romdata.sm);
+    romdata.sm = NULL;
+    romdata.smsz = 0;
 }
 
 // Load NVRAM, Cartridge RAM, or Memory Card data
