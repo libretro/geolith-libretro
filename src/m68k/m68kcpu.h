@@ -1846,7 +1846,21 @@ static inline void m68ki_exception_privilege_violation(void)
 
 extern jmp_buf m68ki_bus_error_jmp_buf;
 
+/* setjmp() on Mac OS X and *BSD in general saves and restores the signal
+   mask, which costs a sigprocmask() syscall on every call. This trap is
+   armed once per instruction, so on those platforms that syscall dominates
+   execution: profiling a Neo Geo frame on Apple Silicon put 81% of the time
+   in sigprocmask/sigaltstack rather than in emulation, and using the
+   non-signal-saving variant below took the frame from 8.5ms to 1.65ms — a
+   5.2x speedup. _setjmp()/_longjmp() are the POSIX variants that skip the
+   mask; the pairing must match, so both sites are switched together.
+   The same gotcha is already worked around for the address error trap
+   above, via sigsetjmp(..., 0). */
+#ifdef _BSD_SETJMP_H
+#define m68ki_check_bus_error_trap() _setjmp(m68ki_bus_error_jmp_buf)
+#else
 #define m68ki_check_bus_error_trap() setjmp(m68ki_bus_error_jmp_buf)
+#endif
 
 /* Exception for bus error */
 static inline void m68ki_exception_bus_error(void)
@@ -1876,7 +1890,13 @@ m68k_read_memory_8(0x00ffff01);
 	m68ki_stack_frame_1000(REG_PPC, sr, EXCEPTION_BUS_ERROR);
 
 	m68ki_jump_vector(EXCEPTION_BUS_ERROR);
+	/* Must pair with whichever variant m68ki_check_bus_error_trap() used:
+	   mixing setjmp() with _longjmp() is undefined. */
+#ifdef _BSD_SETJMP_H
+	_longjmp(m68ki_bus_error_jmp_buf, 1);
+#else
 	longjmp(m68ki_bus_error_jmp_buf, 1);
+#endif
 }
 
 extern int cpu_log_enabled;
