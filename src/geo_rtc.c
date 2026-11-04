@@ -115,9 +115,10 @@ void geo_rtc_init(void) {
     clk = 0;
     stb = 0;
 
-    // Zero the TP output, mode, and counter
+    /* Zero the TP output, mode, and counter. As MAME's upd1990a: the time
+       pulse does not run until a command selects it */
     tp = 0;
-    tpmode = 0;
+    tpmode = TPMODE_STOP;
     tpcounter = 0;
 
     // Initialize the Timing Pulse interval to one second
@@ -156,6 +157,9 @@ void geo_rtc_wr(uint8_t data) {
                 */
                 fmode = 0;
                 tpinterval = CYCS_68K_PER_SECOND / 64;
+                tpcounter = 0;      // restarted, high first (MAME's upd1990a)
+                tpmode = TPMODE_RUN;
+                tp = 1;
                 break;
             }
             case 0x01: { // Register Shift -- DATA OUT = [LSB] (0/1)
@@ -207,46 +211,58 @@ void geo_rtc_wr(uint8_t data) {
             }
             case 0x04: { // TP = 64Hz
                 tpinterval = CYCS_68K_PER_SECOND / 64;
+                tpcounter = 0;      // restarted, high first (MAME's upd1990a)
                 tpmode = TPMODE_RUN;
+                tp = 1;
                 break;
             }
             case 0x05: { // TP = 256Hz
                 tpinterval = CYCS_68K_PER_SECOND / 256;
+                tpcounter = 0;      // restarted, high first (MAME's upd1990a)
                 tpmode = TPMODE_RUN;
+                tp = 1;
                 break;
             }
             case 0x06: { // TP = 2048Hz
                 tpinterval = CYCS_68K_PER_SECOND / 2048; // Some precision loss
+                tpcounter = 0;      // restarted, high first (MAME's upd1990a)
                 tpmode = TPMODE_RUN;
+                tp = 1;
                 break;
             }
             case 0x07: { // TP = 4096Hz
                 tpinterval = CYCS_68K_PER_SECOND / 4096; // Some precision loss
+                tpcounter = 0;      // restarted, high first (MAME's upd1990a)
                 tpmode = TPMODE_RUN;
+                tp = 1;
                 break;
             }
             case 0x08: { // TP = 1s interval set (counter reset & start)
                 tpinterval = CYCS_68K_PER_SECOND;
                 tpcounter = 0;
                 tpmode = TPMODE_RUN;
+                tp = 1;            // high first (MAME's upd1990a)
                 break;
             }
             case 0x09: { // TP = 10s interval set (counter reset & start)
                 tpinterval = CYCS_68K_PER_SECOND * 10;
                 tpcounter = 0;
                 tpmode = TPMODE_RUN;
+                tp = 1;            // high first (MAME's upd1990a)
                 break;
             }
             case 0x0a: { // TP = 30s interval set (counter reset & start)
                 tpinterval = CYCS_68K_PER_SECOND * 30;
                 tpcounter = 0;
                 tpmode = TPMODE_RUN;
+                tp = 1;            // high first (MAME's upd1990a)
                 break;
             }
             case 0x0b: { // TP = 60s interval set (counter reset & start)
                 tpinterval = CYCS_68K_PER_SECOND * 60;
                 tpcounter = 0;
                 tpmode = TPMODE_RUN;
+                tp = 1;            // high first (MAME's upd1990a)
                 break;
             }
             case 0x0c: { // Interval Output Flag Reset
@@ -355,10 +371,9 @@ void geo_rtc_sync(unsigned scycs) {
         if (tpcounter >= tpinterval)
             tpcounter -= tpinterval;
 
-        /* The TP value is set low for the first half of the interval, high for
-           the second half (50% duty).
-        */
-        tp = tpcounter >= (tpinterval >> 1);
+        /* 50% duty, high for the first half of the interval: the pulse
+           restarts high when a command selects it (MAME's upd1990a) */
+        tp = tpcounter < (tpinterval >> 1);
     }
 }
 
