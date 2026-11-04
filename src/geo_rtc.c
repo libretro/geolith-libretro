@@ -40,6 +40,13 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 // 68K @ 12MHz == 12,000,000Hz
 #define CYCS_68K_PER_SECOND 12000000
 
+/* Timing Pulse intervals and counter in 1/8192ths of a 68K cycle: every TP
+   rate (up to 4096Hz, toggling at 8192Hz) is a whole number of these, so the
+   pulse does not drift from the 32.768kHz crystal's timing.
+*/
+#define TP_UNIT 8192
+#define TP_SECOND ((uint64_t)CYCS_68K_PER_SECOND * TP_UNIT)
+
 // Timing Pulse Mode
 #define TPMODE_RUN  0x00
 #define TPMODE_STOP 0x01
@@ -59,10 +66,10 @@ static uint64_t datareg = 0;
 static uint32_t cycs = 0;
 
 // Timing Pulse Interval
-static uint32_t tpinterval = 0;
+static uint64_t tpinterval = 0;
 
 // Timing Pulse Counter
-static uint32_t tpcounter = 0;
+static uint64_t tpcounter = 0;
 
 // Timing Pulse Output Mode
 static uint8_t tpmode = 0;
@@ -86,6 +93,18 @@ static uint8_t stb = 0;
 // 1Hz Interval Timer and Timing Pulse output values
 static uint8_t timer_1hz = 0;
 static uint8_t tp = 0;
+
+// Timing Pulse level for the first half of the interval
+static uint8_t tpstart = 1;
+
+/* A command selecting a time pulse restarts it with an immediate toggle, then
+   a toggle every half interval (MAME's upd1990a): the first half is the
+   opposite of the level the pin had.
+*/
+static inline void geo_rtc_tp_restart(void) {
+    tpstart = !tp;
+    tp = tpstart;
+}
 
 void geo_rtc_init(void) {
     // Zero the 1Hz Interval Timer and Command register
@@ -120,9 +139,10 @@ void geo_rtc_init(void) {
     tp = 0;
     tpmode = TPMODE_STOP;
     tpcounter = 0;
+    tpstart = 1;
 
     // Initialize the Timing Pulse interval to one second
-    tpinterval = CYCS_68K_PER_SECOND;
+    tpinterval = TP_SECOND;
 }
 
 uint8_t geo_rtc_rd(void) {
@@ -156,10 +176,10 @@ void geo_rtc_wr(uint8_t data) {
                    not held.
                 */
                 fmode = 0;
-                tpinterval = CYCS_68K_PER_SECOND / 64;
-                tpcounter = 0;      // restarted, high first (MAME's upd1990a)
+                tpinterval = TP_SECOND / 64;
+                tpcounter = 0;
                 tpmode = TPMODE_RUN;
-                tp = 1;
+                geo_rtc_tp_restart();
                 break;
             }
             case 0x01: { // Register Shift -- DATA OUT = [LSB] (0/1)
@@ -210,59 +230,59 @@ void geo_rtc_wr(uint8_t data) {
                 break;
             }
             case 0x04: { // TP = 64Hz
-                tpinterval = CYCS_68K_PER_SECOND / 64;
-                tpcounter = 0;      // restarted, high first (MAME's upd1990a)
+                tpinterval = TP_SECOND / 64;
+                tpcounter = 0;
                 tpmode = TPMODE_RUN;
-                tp = 1;
+                geo_rtc_tp_restart();
                 break;
             }
             case 0x05: { // TP = 256Hz
-                tpinterval = CYCS_68K_PER_SECOND / 256;
-                tpcounter = 0;      // restarted, high first (MAME's upd1990a)
+                tpinterval = TP_SECOND / 256;
+                tpcounter = 0;
                 tpmode = TPMODE_RUN;
-                tp = 1;
+                geo_rtc_tp_restart();
                 break;
             }
             case 0x06: { // TP = 2048Hz
-                tpinterval = CYCS_68K_PER_SECOND / 2048; // Some precision loss
-                tpcounter = 0;      // restarted, high first (MAME's upd1990a)
+                tpinterval = TP_SECOND / 2048;
+                tpcounter = 0;
                 tpmode = TPMODE_RUN;
-                tp = 1;
+                geo_rtc_tp_restart();
                 break;
             }
             case 0x07: { // TP = 4096Hz
-                tpinterval = CYCS_68K_PER_SECOND / 4096; // Some precision loss
-                tpcounter = 0;      // restarted, high first (MAME's upd1990a)
+                tpinterval = TP_SECOND / 4096;
+                tpcounter = 0;
                 tpmode = TPMODE_RUN;
-                tp = 1;
+                geo_rtc_tp_restart();
                 break;
             }
             case 0x08: { // TP = 1s interval set (counter reset & start)
-                tpinterval = CYCS_68K_PER_SECOND;
+                tpinterval = TP_SECOND;
                 tpcounter = 0;
                 tpmode = TPMODE_RUN;
-                tp = 1;            // high first (MAME's upd1990a)
+                geo_rtc_tp_restart();
                 break;
             }
             case 0x09: { // TP = 10s interval set (counter reset & start)
-                tpinterval = CYCS_68K_PER_SECOND * 10;
+                tpinterval = TP_SECOND * 10;
                 tpcounter = 0;
                 tpmode = TPMODE_RUN;
-                tp = 1;            // high first (MAME's upd1990a)
+                geo_rtc_tp_restart();
                 break;
             }
             case 0x0a: { // TP = 30s interval set (counter reset & start)
-                tpinterval = CYCS_68K_PER_SECOND * 30;
+                tpinterval = TP_SECOND * 30;
                 tpcounter = 0;
                 tpmode = TPMODE_RUN;
-                tp = 1;            // high first (MAME's upd1990a)
+                geo_rtc_tp_restart();
                 break;
             }
             case 0x0b: { // TP = 60s interval set (counter reset & start)
-                tpinterval = CYCS_68K_PER_SECOND * 60;
+                tpinterval = TP_SECOND * 60;
                 tpcounter = 0;
                 tpmode = TPMODE_RUN;
-                tp = 1;            // high first (MAME's upd1990a)
+                geo_rtc_tp_restart();
                 break;
             }
             case 0x0c: { // Interval Output Flag Reset
@@ -366,14 +386,13 @@ void geo_rtc_sync(unsigned scycs) {
     timer_1hz = cycs >= (CYCS_68K_PER_SECOND >> 1);
 
     if (tpmode == TPMODE_RUN) {
-        tpcounter += scycs;
+        tpcounter += (uint64_t)scycs * TP_UNIT;
 
         if (tpcounter >= tpinterval)
             tpcounter -= tpinterval;
 
-        /* 50% duty, high for the first half of the interval: the pulse
-           restarts high when a command selects it (MAME's upd1990a) */
-        tp = tpcounter < (tpinterval >> 1);
+        // 50% duty, the first half at the level set by the last restart
+        tp = tpcounter < (tpinterval >> 1) ? tpstart : !tpstart;
     }
 }
 
@@ -381,8 +400,8 @@ void geo_rtc_state_load(uint8_t *st) {
     cmdreg = geo_serial_pop8(st);
     datareg = geo_serial_pop64(st);
     cycs = geo_serial_pop32(st);
-    tpinterval = geo_serial_pop32(st);
-    tpcounter = geo_serial_pop32(st);
+    tpinterval = geo_serial_pop64(st);
+    tpcounter = geo_serial_pop64(st);
     tpmode = geo_serial_pop8(st);
     fmode = geo_serial_pop8(st);
     year = geo_serial_pop32(st);
@@ -396,14 +415,15 @@ void geo_rtc_state_load(uint8_t *st) {
     stb = geo_serial_pop8(st);
     timer_1hz = geo_serial_pop8(st);
     tp = geo_serial_pop8(st);
+    tpstart = geo_serial_pop8(st);
 }
 
 void geo_rtc_state_save(uint8_t *st) {
     geo_serial_push8(st, cmdreg);
     geo_serial_push64(st, datareg);
     geo_serial_push32(st, cycs);
-    geo_serial_push32(st, tpinterval);
-    geo_serial_push32(st, tpcounter);
+    geo_serial_push64(st, tpinterval);
+    geo_serial_push64(st, tpcounter);
     geo_serial_push8(st, tpmode);
     geo_serial_push8(st, fmode);
     geo_serial_push32(st, year);
@@ -417,4 +437,6 @@ void geo_rtc_state_save(uint8_t *st) {
     geo_serial_push8(st, stb);
     geo_serial_push8(st, timer_1hz);
     geo_serial_push8(st, tp);
+    geo_serial_push8(st, tpstart);
 }
+
