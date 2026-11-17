@@ -87,15 +87,37 @@ static uint8_t stb = 0;
 static uint8_t timer_1hz = 0;
 static uint8_t tp = 0;
 
+// Frontend start time callback: local time as seconds since the epoch
+static int (*geo_rtc_cb)(int64_t*) = NULL;
+
+// Set the callback supplying the start time, or NULL to use the host clock
+void geo_rtc_set_callback(int (*cb)(int64_t*)) {
+    geo_rtc_cb = cb;
+}
+
 void geo_rtc_init(void) {
     // Zero the 1Hz Interval Timer and Command register
     cycs = 0;
     cmdreg = 0;
 
-    // Seed the time data with the current system time
+    /* Seed the time data with the start time from the frontend if it gives
+       one, otherwise with the current system time. The start time is local
+       time counted as UTC, so gmtime yields the local fields.
+    */
+    struct tm *timeinfo = NULL;
     time_t rawtime;
-    time(&rawtime);
-    struct tm *timeinfo = localtime(&rawtime);
+    int64_t localsecs;
+
+    if (geo_rtc_cb && geo_rtc_cb(&localsecs)) {
+        rawtime = (time_t)localsecs;
+        if ((int64_t)rawtime == localsecs) // Fits in time_t
+            timeinfo = gmtime(&rawtime);
+    }
+
+    if (timeinfo == NULL) {
+        time(&rawtime);
+        timeinfo = localtime(&rawtime);
+    }
 
     /* Data types are: second, minute, hour, day, weekday, month, year
        A 24-hour system and the last two digits of the Gregorian year are used
