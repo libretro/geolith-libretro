@@ -42,6 +42,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "geo_m68k.h"
 #include "geo_mixer.h"
 #include "geo_neo.h"
+#include "geo_rtc.h"
 #include "geo_vfs.h"
 #include "geo_z80.h"
 
@@ -123,6 +124,7 @@ static retro_audio_sample_batch_t audio_batch_cb = NULL;
 static retro_environment_t environ_cb = NULL;
 static retro_input_poll_t input_poll_cb = NULL;
 static retro_input_state_t input_state_cb = NULL;
+static struct retro_calendar_time_interface caltime;
 
 // libretro input descriptors
 static struct retro_input_descriptor input_desc_js[] = { // Joysticks (Default)
@@ -600,6 +602,14 @@ static void geo_cb_audio(size_t samps) {
     numsamps = samps >> 1;
 }
 
+static int geo_cb_rtc_start(int64_t *localsecs) {
+    struct retro_calendar_time t;
+    if (!caltime.get_start_time(&t))
+        return 0;
+    *localsecs = (int64_t)t.sec + t.utc_offset;
+    return 1;
+}
+
 static void geo_geom_refresh(void) {
     struct retro_system_av_info avinfo;
     retro_get_system_av_info(&avinfo);
@@ -990,6 +1000,14 @@ void retro_init(void) {
 
     // Set up logging
     geo_log_set_callback(geo_retro_log);
+
+    // Seed the RTC from the frontend's calendar time if it offers one
+    caltime.interface_version = RETRO_CALENDAR_TIME_INTERFACE_VERSION;
+    if (environ_cb(RETRO_ENVIRONMENT_GET_CALENDAR_TIME_INTERFACE, &caltime) &&
+        caltime.interface_version >= 1 && caltime.get_start_time)
+        geo_rtc_set_callback(geo_cb_rtc_start);
+    else
+        geo_rtc_set_callback(NULL);
 
     // Allocate and pass the video buffer into the emulator
     vbuf = (uint32_t*)calloc(1, LSPC_WIDTH * LSPC_SCANLINES * sizeof(uint32_t));
