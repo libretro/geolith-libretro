@@ -607,6 +607,9 @@ static int geo_cb_rtc_start(int64_t *localsecs) {
     if (!caltime.get_start_time(&t))
         return 0;
     *localsecs = (int64_t)t.sec + t.utc_offset;
+    log_cb(RETRO_LOG_DEBUG,
+        "RTC start from the frontend: %lld (UTC offset %lld)\n",
+        (long long)t.sec, (long long)t.utc_offset);
     return 1;
 }
 
