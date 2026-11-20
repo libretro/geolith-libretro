@@ -32,6 +32,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define GEO_RTC_H
 
 void geo_rtc_init(void);
+void geo_rtc_set_callback(int (*)(int64_t*));
 
 uint8_t geo_rtc_rd(void);
 void geo_rtc_wr(uint8_t);
