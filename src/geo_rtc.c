@@ -40,6 +40,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 // 68K @ 12MHz == 12,000,000Hz
 #define CYCS_68K_PER_SECOND 12000000
 
+// 68K cycles per 64Hz step of the 15 Stage Binary Divider (stage 9 output)
+#define CYCS_68K_PER_64HZ (CYCS_68K_PER_SECOND / 64)
+
 // Timing Pulse Mode
 #define TPMODE_RUN  0x00
 #define TPMODE_STOP 0x01
@@ -55,16 +58,30 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 static uint8_t cmdreg = 0;
 static uint64_t datareg = 0;
 
-// 1Hz Interval Timer cycles
+/* 15 Stage Binary Divider - the 32.768kHz crystal is divided down to 1Hz, and
+   this is the position within the second measured in 68K cycles. The 1Hz
+   DATA OUT signal and the 64Hz to 4096Hz Timing Pulses are outputs of this
+   divider's stages.
+*/
 static uint32_t cycs = 0;
 
-// Timing Pulse Interval
+/* Timing Pulse Interval - the nominal period in whole 68K cycles. Values of a
+   second or more select the interval timer, anything shorter selects one of
+   the divider's frequency outputs. 2048Hz and 4096Hz are not a whole number of
+   cycles (5859.375 and 2929.6875), but as the level is taken from the divider
+   position the truncated value only identifies the rate.
+*/
 static uint32_t tpinterval = 0;
 
-// Timing Pulse Counter
+/* Interval Timer Counter - independent of the time counter. Measured in 68K
+   cycles, but advanced a 64Hz step at a time: the documented interval timer
+   accuracy is +/-15.625ms, or one 64Hz step. The interval signal is high when
+   the counter is in the upper half of the interval, so a reset counter sits at
+   the halfway point rather than zero (see geo_rtc_interval_reset).
+*/
 static uint32_t tpcounter = 0;
 
-// Timing Pulse Output Mode
+// Interval Timer Run/Stop
 static uint8_t tpmode = 0;
 
 // Function Mode
@@ -86,6 +103,74 @@ static uint8_t stb = 0;
 // 1Hz Interval Timer and Timing Pulse output values
 static uint8_t timer_1hz = 0;
 static uint8_t tp = 0;
+
+/* The values below are derived from the serialized state, and are recovered
+   by geo_rtc_derive when a state is loaded.
+*/
+
+// Position of the next 64Hz step of the divider
+static uint32_t step64 = CYCS_68K_PER_64HZ;
+
+// Timing Pulse half periods per second for the frequency outputs
+static uint32_t tphalves = 0;
+
+/* Interval Output Flag Reset has returned the interval signal to its reset
+   level: TP stays high until the interval signal next goes low.
+*/
+static uint8_t tpflagreset = 0;
+
+// Interval signal level for the current position of the interval timer
+static inline uint8_t geo_rtc_interval_signal(void) {
+    return tpcounter >= (tpinterval >> 1);
+}
+
+/* Reset the interval timer. TP is an N-channel open drain output, and the
+   interval signal is a flag for use as an interrupt. The reset level is
+   therefore taken to be high (output released), with the flag asserted low
+   for the second half of the interval. The datasheet does not state the
+   levels. Starting the counter halfway gives a high level first using the
+   same relationship between counter and level that states have always held.
+*/
+static inline void geo_rtc_interval_reset(void) {
+    tpcounter = tpinterval >> 1;
+}
+
+static inline void geo_rtc_step64_next(void) {
+    step64 = ((cycs / CYCS_68K_PER_64HZ) + 1) * CYCS_68K_PER_64HZ;
+}
+
+// Select a Timing Pulse period, measured in 68K cycles
+static inline void geo_rtc_tp_select(uint32_t interval) {
+    tpinterval = interval ? interval : CYCS_68K_PER_SECOND;
+    tphalves = (CYCS_68K_PER_SECOND / tpinterval) << 1;
+}
+
+/* TP = 64Hz, 256Hz, 2048Hz, 4096Hz: the interval timer stops, and TP outputs
+   the divider at 50% duty. Nothing documents the phase being restarted, so it
+   stays tied to the divider.
+*/
+static inline void geo_rtc_tp_frequency(uint32_t interval) {
+    geo_rtc_tp_select(interval);
+    tpmode = TPMODE_STOP;
+    tpflagreset = 0;
+}
+
+// TP = 1s, 10s, 30s, 60s interval: the counter is reset and started
+static inline void geo_rtc_tp_interval(uint32_t interval) {
+    geo_rtc_tp_select(interval);
+    geo_rtc_interval_reset();
+    tpmode = TPMODE_RUN;
+    tpflagreset = 0;
+    tp = 1;
+}
+
+static void geo_rtc_derive(void) {
+    geo_rtc_step64_next();
+    geo_rtc_tp_select(tpinterval);
+    tp &= 0x01;
+    tpflagreset = (tpinterval >= CYCS_68K_PER_SECOND) &&
+        !geo_rtc_interval_signal() && tp;
+}
 
 // Frontend start time callback: local time as seconds since the epoch
 static int (*geo_rtc_cb)(int64_t*) = NULL;
@@ -137,13 +222,18 @@ void geo_rtc_init(void) {
     clk = 0;
     stb = 0;
 
-    // Zero the TP output, mode, and counter
+    /* The chip is powered by the backup battery and runs from its own crystal
+       while the system is off, and a mode stays latched until another in the
+       same command group is set. There is therefore no power-on state to
+       speak of: start with the 4096Hz Timing Pulse selected, which is what
+       the MVS system ROM's calendar test leaves behind on every boot.
+    */
     tp = 0;
-    tpmode = 0;
+    tpmode = TPMODE_STOP;
     tpcounter = 0;
+    tpinterval = CYCS_68K_PER_SECOND / 4096;
 
-    // Initialize the Timing Pulse interval to one second
-    tpinterval = CYCS_68K_PER_SECOND;
+    geo_rtc_derive();
 }
 
 uint8_t geo_rtc_rd(void) {
@@ -177,7 +267,12 @@ void geo_rtc_wr(uint8_t data) {
                    not held.
                 */
                 fmode = 0;
-                tpinterval = CYCS_68K_PER_SECOND / 64;
+
+                /* Register Hold belongs to the register control group and
+                   leaves the Timing Pulse as it was. It is only documented
+                   to output 64Hz to TP when it cancels the test mode, which
+                   is not emulated.
+                */
                 break;
             }
             case 0x01: { // Register Shift -- DATA OUT = [LSB] (0/1)
@@ -185,7 +280,14 @@ void geo_rtc_wr(uint8_t data) {
                 break;
             }
             case 0x02: { // Time Set & Counter Hold -- DATA OUT = [LSB] (0/1)
+                /* Stages 10-15 of the divider are reset and the time counter
+                   is held until Register Hold, Register Shift, or Time Read
+                   is set. Stages 1-9 (64Hz and faster) keep running, which is
+                   where the +/-15.625ms time setting accuracy comes from.
+                */
                 fmode = 2;
+                cycs %= CYCS_68K_PER_64HZ;
+                geo_rtc_step64_next();
 
                 /* Data is transferred from the 48-bit shift register to the
                    time counter.
@@ -228,54 +330,45 @@ void geo_rtc_wr(uint8_t data) {
                 break;
             }
             case 0x04: { // TP = 64Hz
-                tpinterval = CYCS_68K_PER_SECOND / 64;
-                tpmode = TPMODE_RUN;
+                geo_rtc_tp_frequency(CYCS_68K_PER_SECOND / 64);
                 break;
             }
             case 0x05: { // TP = 256Hz
-                tpinterval = CYCS_68K_PER_SECOND / 256;
-                tpmode = TPMODE_RUN;
+                geo_rtc_tp_frequency(CYCS_68K_PER_SECOND / 256);
                 break;
             }
             case 0x06: { // TP = 2048Hz
-                tpinterval = CYCS_68K_PER_SECOND / 2048; // Some precision loss
-                tpmode = TPMODE_RUN;
+                geo_rtc_tp_frequency(CYCS_68K_PER_SECOND / 2048);
                 break;
             }
             case 0x07: { // TP = 4096Hz
-                tpinterval = CYCS_68K_PER_SECOND / 4096; // Some precision loss
-                tpmode = TPMODE_RUN;
+                geo_rtc_tp_frequency(CYCS_68K_PER_SECOND / 4096);
                 break;
             }
             case 0x08: { // TP = 1s interval set (counter reset & start)
-                tpinterval = CYCS_68K_PER_SECOND;
-                tpcounter = 0;
-                tpmode = TPMODE_RUN;
+                geo_rtc_tp_interval(CYCS_68K_PER_SECOND);
                 break;
             }
             case 0x09: { // TP = 10s interval set (counter reset & start)
-                tpinterval = CYCS_68K_PER_SECOND * 10;
-                tpcounter = 0;
-                tpmode = TPMODE_RUN;
+                geo_rtc_tp_interval(CYCS_68K_PER_SECOND * 10);
                 break;
             }
             case 0x0a: { // TP = 30s interval set (counter reset & start)
-                tpinterval = CYCS_68K_PER_SECOND * 30;
-                tpcounter = 0;
-                tpmode = TPMODE_RUN;
+                geo_rtc_tp_interval(CYCS_68K_PER_SECOND * 30);
                 break;
             }
             case 0x0b: { // TP = 60s interval set (counter reset & start)
-                tpinterval = CYCS_68K_PER_SECOND * 60;
-                tpcounter = 0;
-                tpmode = TPMODE_RUN;
+                geo_rtc_tp_interval(CYCS_68K_PER_SECOND * 60);
                 break;
             }
             case 0x0c: { // Interval Output Flag Reset
                 /* The interval signal to the TP pin is reset. The interval
                    timer counter continues operation.
                 */
-                tp = 0;
+                if (tpinterval >= CYCS_68K_PER_SECOND) {
+                    tp = 1;
+                    tpflagreset = 1;
+                }
                 tpmode = TPMODE_RUN;
                 break;
             }
@@ -283,7 +376,7 @@ void geo_rtc_wr(uint8_t data) {
                 /* The timer for outputting interval signals is reset, then
                    started.
                 */
-                tpcounter = 0;
+                geo_rtc_interval_reset();
                 tpmode = TPMODE_RUN;
                 break;
             }
@@ -359,11 +452,26 @@ static inline void geo_rtc_clk_inc(void) {
 void geo_rtc_sync(unsigned scycs) {
     cycs += scycs;
 
-    if (cycs >= CYCS_68K_PER_SECOND) {
+    // Count the 64Hz steps of the divider which have passed
+    uint32_t steps = 0;
+    while (cycs >= step64) {
+        ++steps;
+        step64 += CYCS_68K_PER_64HZ;
+    }
+
+    if (fmode == 2) {
+        // Time Set & Counter Hold: stages 10-15 of the divider stay reset
+        if (cycs >= CYCS_68K_PER_64HZ) {
+            cycs %= CYCS_68K_PER_64HZ;
+            geo_rtc_step64_next();
+        }
+    }
+    else if (cycs >= CYCS_68K_PER_SECOND) {
         // Increment the clock by one second
         geo_rtc_clk_inc();
 
         cycs -= CYCS_68K_PER_SECOND;
+        geo_rtc_step64_next();
     }
 
     /* The 1Hz Interval Timer value is output at 50% duty. Set it high for the
@@ -371,16 +479,29 @@ void geo_rtc_sync(unsigned scycs) {
     */
     timer_1hz = cycs >= (CYCS_68K_PER_SECOND >> 1);
 
-    if (tpmode == TPMODE_RUN) {
-        tpcounter += scycs;
+    if (tpinterval < CYCS_68K_PER_SECOND) {
+        /* Frequency output at 50% duty, taken from the divider: the output
+           of a divider stage is low for the first half of its period.
+        */
+        tp = (((uint64_t)cycs * tphalves) / CYCS_68K_PER_SECOND) & 0x01;
+    }
+    else if (tpmode == TPMODE_RUN) {
+        // The interval timer is clocked by the divider's 64Hz output
+        tpcounter += steps * CYCS_68K_PER_64HZ;
 
         if (tpcounter >= tpinterval)
             tpcounter -= tpinterval;
 
-        /* The TP value is set low for the first half of the interval, high for
-           the second half (50% duty).
+        /* The interval signal is rectangular (50% duty) if not reset: high for
+           the first half of the interval, low for the second half. If reset,
+           it stays high until the next time it would go low.
         */
-        tp = tpcounter >= (tpinterval >> 1);
+        uint8_t signal = geo_rtc_interval_signal();
+
+        if (signal)
+            tpflagreset = 0;
+
+        tp = signal || tpflagreset;
     }
 }
 
@@ -403,6 +524,8 @@ void geo_rtc_state_load(uint8_t *st) {
     stb = geo_serial_pop8(st);
     timer_1hz = geo_serial_pop8(st);
     tp = geo_serial_pop8(st);
+
+    geo_rtc_derive();
 }
 
 void geo_rtc_state_save(uint8_t *st) {
