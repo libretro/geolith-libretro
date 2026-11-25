@@ -80,7 +80,7 @@ static void geo_z80_cd_mem_wr(void *userdata, uint16_t addr, uint8_t data) {
  * handles memory mapping.
  */
 static uint8_t geo_z80_mem_rd(void *userdata, uint16_t addr) {
-    if (userdata) { } // Unused
+    (void)userdata;
 
     if (addr < 0x8000) // Static main code bank
         return mrom[addr];
@@ -98,7 +98,7 @@ static uint8_t geo_z80_mem_rd(void *userdata, uint16_t addr) {
 }
 
 static void geo_z80_mem_wr(void *userdata, uint16_t addr, uint8_t data) {
-    if (userdata) { } // Unused
+    (void)userdata;
 
     if (addr > 0xf7ff)
         zram[addr & 0x07ff] = data;

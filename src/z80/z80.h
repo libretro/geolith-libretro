@@ -50,6 +50,7 @@ struct z80 {
   uint8_t nmi_pending;
   bool iff1 : 1, iff2 : 1;
   bool halted : 1;
+  bool m1; // M1 line: true while read_byte is fetching an opcode
 };
 
 Z80_EXPORT void z80_init(z80* const z);

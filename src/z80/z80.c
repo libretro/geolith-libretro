@@ -111,6 +111,17 @@ static inline uint8_t nextb(z80* const z) {
   return rb(z, z->pc++);
 }
 
+// fetches an opcode byte with the M1 line active, as the CPU does for the
+// first byte of an instruction and for the byte after a CB, ED, DD or FD
+// prefix. Hardware which treats opcode fetches differently to other reads
+// can check z->m1 in its read_byte handler.
+static inline uint8_t nextop(z80* const z) {
+  z->m1 = true;
+  const uint8_t opcode = rb(z, z->pc++);
+  z->m1 = false;
+  return opcode;
+}
+
 static inline uint16_t nextw(z80* const z) {
   z->pc += 2;
   return rw(z, z->pc - 2);
@@ -748,6 +759,7 @@ Z80_EXPORT void z80_init(z80* const z) {
   z->iff1 = 0;
   z->iff2 = 0;
   z->halted = 0;
+  z->m1 = 0;
   z->irq_pending = 0;
   z->nmi_pending = 0;
   z->irq_data = 0;
@@ -765,6 +777,7 @@ Z80_EXPORT void z80_reset(z80* const z) {
   z->iff1 = 0;
   z->iff2 = 0;
   z->halted = 0;
+  z->m1 = 0;
   z->nmi_pending = 0;
 }
 
@@ -773,7 +786,7 @@ static unsigned z80_step_s(z80* const z) {
   if (z->halted) {
     cyc += exec_opcode(z, 0x00);
   } else {
-    const uint8_t opcode = nextb(z);
+    const uint8_t opcode = nextop(z);
     cyc += exec_opcode(z, opcode);
   }
 
@@ -1742,10 +1755,10 @@ static unsigned exec_opcode(z80* const z, uint8_t opcode) {
     z->h_l_ = hl;
   } break; // exx
 
-  case 0xCB: cyc += 0; cyc += exec_opcode_cb(z, nextb(z)); break;
-  case 0xED: cyc += 0; cyc += exec_opcode_ed(z, nextb(z)); break;
-  case 0xDD: cyc += 0; cyc += exec_opcode_ddfd(z, nextb(z), &z->ix); break;
-  case 0xFD: cyc += 0; cyc += exec_opcode_ddfd(z, nextb(z), &z->iy); break;
+  case 0xCB: cyc += 0; cyc += exec_opcode_cb(z, nextop(z)); break;
+  case 0xED: cyc += 0; cyc += exec_opcode_ed(z, nextop(z)); break;
+  case 0xDD: cyc += 0; cyc += exec_opcode_ddfd(z, nextop(z), &z->ix); break;
+  case 0xFD: cyc += 0; cyc += exec_opcode_ddfd(z, nextop(z), &z->iy); break;
 
   default: break; // fprintf(stderr, "unknown opcode %02X\n", opcode); break;
   }
